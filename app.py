@@ -356,6 +356,41 @@ with tab_planning:
         )
     st.markdown("---")
 
+    st.markdown("---")
+    st.subheader("🏁 Estrategia de Carrera & Calculadora de Parciales (Pace Band)")
+    st.caption("Estructura la táctica de ritmo kilómetro a kilómetro para tu próxima competencia objetivo.")
+
+    col_p1, col_p2, col_p3 = st.columns(3)
+    with col_p1:
+        dist_carrera = st.selectbox("Distancia Objetivo:", [5.0, 10.0, 15.0, 21.1], index=1)
+    with col_p2:
+        tiempo_target = st.number_input("Tiempo Objetivo (minutos):", min_value=15.0, max_value=300.0, value=45.0, step=0.5)
+    with col_p3:
+        estrategia_sel = st.selectbox("Estrategia de Ritmo:", ["Negative Split", "Ritmo Uniforme", "Positive Split"])
+
+    if st.button("📊 Calcular Parciales de Carrera", type="primary"):
+        df_splits = calculate_pacing_splits(dist_carrera, tiempo_target, estrategia_sel)
+        
+        # Gráfica de Ritmo km a km
+        fig_splits = px.line(
+            df_splits,
+            x="Km",
+            y="Ritmo_Segundos",
+            text="Ritmo Prescrito (min/km)",
+            title=f"Perfil de Ritmo Proyectado ({estrategia_sel})",
+            markers=True
+        )
+        fig_splits.update_traces(textposition="top center")
+        fig_splits.update_yaxes(title="Ritmo (Segundos/km)", autorange="reversed") # Invertido: arriba es más rápido
+        st.plotly_chart(fig_splits, use_container_width=True)
+
+        # Tabla limpia de parciales
+        st.dataframe(
+            df_splits[["Km", "Ritmo Prescrito (min/km)", "Tiempo Acumulado"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
 
 # --- PESTAÑA 3: COACH IA ---
 with tab_ai:
