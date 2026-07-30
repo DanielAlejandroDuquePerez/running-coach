@@ -393,16 +393,16 @@ with tab_planning:
             hide_index=True
         )
 
-# ratio acwr 
+# prevencion lesiones
     st.markdown("---")
     st.subheader("🛡️ Prevención de Lesiones: Ratio ACWR")
-    st.caption("Monitorea la relación entre el esfuerzo de la última semana y tu base histórica para evitar picos destructivos de volumen.")
+    st.caption("Monitorea la relación entre el esfuerzo de la última semana y tu base histórica.")
 
     col_a1, col_a2 = st.columns(2)
     with col_a1:
-        km_agudos = st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=40.0, step=1.0)
+        km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=40.0, step=1.0))
     with col_a2:
-        km_cronicos = st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0)
+        km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0))
 
     val_acwr, estado_acwr, tipo_alerta, desc_acwr = calculate_acwr(km_agudos, km_cronicos)
 
