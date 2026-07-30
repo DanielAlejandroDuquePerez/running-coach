@@ -937,3 +937,58 @@ def get_jack_daniels_zones(vdot: float) -> pd.DataFrame:
         })
         
     return pd.DataFrame(table)
+
+def calculate_pacing_splits(distancia_km: float, tiempo_objetivo_min: float, estrategia: str = "Negative Split"):
+    """
+    Calcula los parciales km por km según la estrategia de ritmo seleccionada.
+    """
+    ritmo_medio_seg = (tiempo_objetivo_min * 60) / distancia_km
+    num_kms = int(distancia_km)
+    fraccion_final = distancia_km - num_kms
+    
+    kms = list(range(1, num_kms + 1))
+    if fraccion_final > 0:
+        kms.append(distancia_km)  # Último tramo parcial
+
+    ritmos_seg = []
+    
+    for k in kms:
+        if estrategia == "Negative Split":
+            # Primera mitad un 1.5% más lenta, segunda mitad un 1.5% más rápida
+            progreso = (k - 1) / (distancia_km - 1) if distancia_km > 1 else 0.5
+            factor = 1.015 - (0.03 * progreso)
+        elif estrategia == "Positive Split":
+            # Primera mitad 1.5% más rápida, decayendo al final
+            progreso = (k - 1) / (distancia_km - 1) if distancia_km > 1 else 0.5
+            factor = 0.985 + (0.03 * progreso)
+        else:  # Ritmo Uniforme
+            factor = 1.0
+            
+        ritmos_seg.append(ritmo_medio_seg * factor)
+
+    # Construir lista de resultados
+    parciales = []
+    tiempo_acumulado_seg = 0.0
+
+    for i, k in enumerate(kms):
+        es_tramo_final = (i == len(kms) - 1 and fraccion_final > 0)
+        distancia_tramo = fraccion_final if es_tramo_final else 1.0
+        
+        tiempo_tramo_seg = ritmos_seg[i] * distancia_tramo
+        tiempo_acumulado_seg += tiempo_tramo_seg
+        
+        # Formatear ritmos (MM:SS)
+        m_ritmo, s_ritmo = divmod(int(ritmos_seg[i]), 60)
+        m_acum, s_acum = divmod(int(tiempo_acumulado_seg), 60)
+        h_acum, m_acum = divmod(m_acum, 60)
+        
+        fmt_acum = f"{h_acum:02d}:{m_acum:02d}:{s_acum:02d}" if h_acum > 0 else f"{m_acum:02d}:{s_acum:02d}"
+        
+        parciales.append({
+            "Km": f"Km {k:.1f}" if es_tramo_final else f"Km {int(k)}",
+            "Ritmo Prescrito (min/km)": f"{m_ritmo:02d}:{s_ritmo:02d}",
+            "Tiempo Acumulado": fmt_acum,
+            "Ritmo_Segundos": ritmos_seg[i]
+        })
+
+    return pd.DataFrame(parciales)
