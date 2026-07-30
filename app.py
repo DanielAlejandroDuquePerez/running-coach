@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # 2. Consolidación de importaciones
-from src.metrics import calculate_vdot, calculate_pacing_splits
+from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio
 from src.metrics import calculate_pacing_splits
 from src.storage import save_new_plan, load_all_plans, update_full_plan
 from src.data_loader import load_data
@@ -393,33 +393,33 @@ with tab_planning:
             hide_index=True
         )
 
-# Función para calcular el ACWR y generar alertas
-def compute_acwr_ratio(carga_aguda: float, carga_cronica: float):
-    if carga_cronica is None or carga_cronica <= 0:
-        return 0.0, "Insuficiente carga crónica", "info", "Registra más semanas para establecer una base crónica confiable."
+    # ratio acwr para prevenir lesiones
+    st.markdown("---")
+    st.subheader("🛡️ Prevención de Lesiones: Ratio ACWR")
+    st.caption("Monitorea la relación entre el esfuerzo de la última semana y tu base histórica.")
 
-    acwr = carga_aguda / carga_cronica
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=40.0, step=1.0))
+    with col_a2:
+        km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0))
 
-    if acwr < 0.8:
-        estado = "⚠️ Subentrenamiento / Descarga"
-        tipo_alerta = "warning"
-        desc = "Carga por debajo de la base. Útil para semanas de descarga, pero prolongado causa pérdida de condición física."
-    elif 0.8 <= acwr <= 1.3:
-        estado = "✅ Zona Dulce (Sweet Spot)"
-        tipo_alerta = "success"
-        desc = "Progresión de volumen ideal. Maximiza adaptaciones aeróbicas con mínimo riesgo de lesión."
-    elif 1.3 < acwr <= 1.5:
-        estado = "⚡ Precaución (Sobrecarga Moderada)"
-        tipo_alerta = "warning"
-        desc = "Aumento acelerado de carga. Monitorea fatiga y sueño para no cruzar el límite."
-    else:
-        estado = "🚨 Zona de Peligro (Spike in Load)"
-        tipo_alerta = "error"
-        desc = "Pico drástico de volumen (>50% sobre la base). El riesgo estadístico de lesión se dispara."
+    # Llamada a la nueva función
+    val_acwr, estado_acwr, tipo_alerta, desc_acwr = compute_acwr_ratio(km_agudos, km_cronicos)
 
-    return float(acwr), estado, tipo_alerta, desc
+    col_m1, col_m2 = st.columns([1, 2])
+    with col_m1:
+        st.metric("Ratio ACWR Actual", f"{val_acwr:.2f}")
+    with col_m2:
+        if tipo_alerta == "success":
+            st.success(f"**{estado_acwr}**\n\n{desc_acwr}")
+        elif tipo_alerta == "warning":
+            st.warning(f"**{estado_acwr}**\n\n{desc_acwr}")
+        elif tipo_alerta == "error":
+            st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
+        else:
+            st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
 
-# --- PESTAÑA 3: COACH IA ---
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
     st.caption("Generación de un plan adaptado a tu VDOT real, TSB, frescura y sensaciones de la semana.")
