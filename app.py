@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # 2. Consolidación de importaciones
-from src.metrics import calculate_vdot, calculate_pacing_splits, calculate_acwr
+from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio
 from src.metrics import calculate_pacing_splits
 from src.storage import save_new_plan, load_all_plans, update_full_plan
 from src.data_loader import load_data
@@ -404,7 +404,8 @@ with tab_planning:
     with col_a2:
         km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0))
 
-    val_acwr, estado_acwr, tipo_alerta, desc_acwr = calculate_acwr(km_agudos, km_cronicos)
+    # Llamada a la nueva función
+    val_acwr, estado_acwr, tipo_alerta, desc_acwr = compute_acwr_ratio(km_agudos, km_cronicos)
 
     col_m1, col_m2 = st.columns([1, 2])
     with col_m1:
@@ -418,7 +419,6 @@ with tab_planning:
             st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
         else:
             st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
-
 # --- PESTAÑA 3: COACH IA ---
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
