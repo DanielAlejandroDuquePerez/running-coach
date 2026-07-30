@@ -2,12 +2,116 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+def make_responsive_chart(fig, height=320, title=""):
+    """Aplica formato optimizado para touch y pantallas móviles."""
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=14)),
+        height=height,
+        margin=dict(l=10, r=10, t=35, b=20),
+        legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+        hovermode="x unified",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)"
+    )
+    return fig
+
 # 1. Configuración de la página (Debe ser la primera instrucción)
 st.set_page_config(
     page_title="Performance Dashboard",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- INYECCIÓN CSS PARA DISEÑO RESPONSIVO Y TARJETAS PRO ---
+st.markdown("""
+    <style>
+    /* Reducir espacio superior en dispositivos móviles y escritorio */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    
+    /* Estilizar las tarjetas de métricas (st.metric) */
+    [data-testid="stMetric"] {
+        background-color: #1e222a;
+        border: 1px solid #2d3139;
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Optimizar títulos en pantallas pequeñas */
+    h1 { font-size: 1.8rem !important; }
+    h2 { font-size: 1.4rem !important; }
+    h3 { font-size: 1.1rem !important; }
+
+    /* Ajuste para que las tablas no rompan el layout horizontal */
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .stExpander {
+        border: 1px solid #2d3139 !important;
+        border-radius: 12px !important;
+        background: rgba(30, 34, 42, 0.75) !important;
+        margin-bottom: 0.8rem;
+    }
+
+    [data-testid="stExpanderToggle"] {
+        padding: 0.7rem 0.8rem !important;
+    }
+
+    [data-testid="stExpanderDetails"] {
+        padding: 0.3rem 0.8rem 0.8rem !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- INYECCIÓN DE CSS PARA DISEÑO MOBILE-FIRST Y TARJETAS PRO ---
+st.markdown("""
+    <style>
+    /* 1. Reducir padding sobrante en bordes para móviles */
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+    }
+
+    /* 2. Tarjetas de métricas modernas con bordes y sombra */
+    [data-testid="stMetric"] {
+        background: #1e222a;
+        border: 1px solid #2d3139;
+        border-radius: 12px;
+        padding: 12px 14px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    [data-testid="stMetricLabel"] {
+        font-size: 0.85rem !important;
+        color: #a0aab8 !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.4rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* 3. Ajuste de jerarquía tipográfica para pantallas pequeñas */
+    h1 { font-size: 1.6rem !important; font-weight: 700 !important; }
+    h2 { font-size: 1.25rem !important; font-weight: 600 !important; }
+    h3 { font-size: 1.05rem !important; font-weight: 600 !important; }
+
+    /* 4. Tablas con bordes redondeados y scroll horizontal limpio */
+    [data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # 2. Consolidación de importaciones
 from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio
@@ -239,16 +343,16 @@ with tab_dashboard:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Tarjetas de rendimiento avanzado
-    render_kpi_dashboard(data)
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        render_acwr_card(data)
-    with col_b:
-        render_polarization_card(data)
+    with st.expander("📊 Ver gráficos y tendencias", expanded=False):
+        render_kpi_dashboard(data)
         
-    render_weekly_metrics({"weekly_km": weekly_km})
+        col_a, col_b = st.columns(2)
+        with col_a:
+            render_acwr_card(data)
+        with col_b:
+            render_polarization_card(data)
+            
+        render_weekly_metrics({"weekly_km": weekly_km})
 
 # --- PESTAÑA 2: PLANIFICACIÓN Y ZONAS ---
 with tab_planning:
@@ -529,24 +633,25 @@ with tab_history:
     
     # 2. ANÁLISIS INDIVIDUAL POR SESIÓN (Líneas con colores de acento)
     if mostrar_grafica:
-        col_graf1, col_graf2 = st.columns(2)
-        
-        with col_graf1:
-            st.subheader("Volumen por Actividad")
-            # Aplicamos el naranja principal
-            st.line_chart(filtered.set_index("Activity Date")["Distance"], color="#FC4C02")
+        with st.expander("📈 Ver gráficas de tendencia", expanded=False):
+            col_graf1, col_graf2 = st.columns(2)
             
-        with col_graf2:
-            st.subheader("Evolución de Ritmo")
-            # Aplicamos un cian brillante para contrastar la velocidad
-            st.line_chart(filtered.set_index("Activity Date")["pace_min_km"], color="#00E5FF")
-    
-        st.markdown("---")
+            with col_graf1:
+                st.subheader("Volumen por Actividad")
+                # Aplicamos el naranja principal
+                st.line_chart(filtered.set_index("Activity Date")["Distance"], color="#FC4C02")
+                
+            with col_graf2:
+                st.subheader("Evolución de Ritmo")
+                # Aplicamos un cian brillante para contrastar la velocidad
+                st.line_chart(filtered.set_index("Activity Date")["pace_min_km"], color="#00E5FF")
         
-        # 3. TENDENCIA AGREGADA (Ocupando todo el ancho para facilitar la lectura a largo plazo)
-        st.subheader("Tendencia Semanal de Ritmo")
-        weekly_pace_data = weekly_pace(filtered)
-        st.line_chart(weekly_pace_data.set_index("label")["pace_min_km"], color="#FC4C02")
+            st.markdown("---")
+            
+            # 3. TENDENCIA AGREGADA (Ocupando todo el ancho para facilitar la lectura a largo plazo)
+            st.subheader("Tendencia Semanal de Ritmo")
+            weekly_pace_data = weekly_pace(filtered)
+            st.line_chart(weekly_pace_data.set_index("label")["pace_min_km"], color="#FC4C02")
     
     # 4. DATOS CRUDOS (Al final de la página)
     # 4. DATOS CRUDOS (Al final de la página)
@@ -612,12 +717,11 @@ with tab_seguimiento:
             fig_adh.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
             st.markdown("---")
 
-
-        fig_adh.update_xaxes(type='category')
-
-        fig_adh.update_traces(texttemplate='%{text}%', textposition='outside')
-        fig_adh.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
-        st.plotly_chart(fig_adh, use_container_width=True)
+        with st.expander("📊 Ver historial de adherencia", expanded=False):
+            fig_adh.update_xaxes(type='category')
+            fig_adh.update_traces(texttemplate='%{text}%', textposition='outside')
+            fig_adh.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig_adh, use_container_width=True)
 
         # 📋 2. SELECTOR DE PLAN GUARDADO
         plan_options = {f"{p['fecha_creacion']} | VDOT: {p['vdot_base']} | Estado: {p['estado']}": p['id'] for p in saved_plans}
