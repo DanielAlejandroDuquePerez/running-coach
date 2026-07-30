@@ -612,7 +612,8 @@ with tab_planning:
                 "total_sesiones": len(df),
                 "fecha_reciente": fecha_max.strftime("%Y-%m-%d"),
                 "km_agudos": round(km_agudos, 1),
-                "km_cronicos": round(km_cronicos, 1)
+                "km_cronicos": round(km_cronicos, 1),
+                "df": df 
             }, None
         except Exception as e:
             return None, f"Error al procesar archivo: {str(e)}"
@@ -644,16 +645,16 @@ with tab_planning:
                 st.success(f"✅ Historial cargado. Última actividad: **{resumen_file['fecha_reciente']}** ({resumen_file['total_sesiones']} registros).")
                 km_agudos_val = resumen_file["km_agudos"]
                 km_cronicos_val = resumen_file["km_cronicos"]
+                
+                # 👈 GUARDAMOS LA TABLA EN EL ESTADO GLOBAL
+                st.session_state["df_actividades"] = resumen_file["df"]
 
                 col_c1, col_c2 = st.columns(2)
                 col_c1.metric("Carga Aguda Detectada (7 días)", f"{km_agudos_val} km")
                 col_c2.metric("Carga Crónica Detectada (28d prom.)", f"{km_cronicos_val} km/sem")
-                
-    # 1. Si se cargó un DataFrame, guardar en session_state y mostrar el gráfico interconectado
-    if uploaded_file is not None and 'df_preview' in locals():
-        st.session_state["df_actividades"] = df_preview
-        
-    if st.session_state["df_actividades"] is not None:
+
+    # 👈 MOSTRAR EL GRÁFICO COMBINADO SI HAY DATOS CARGADOS
+    if st.session_state.get("df_actividades") is not None:
         with st.expander("📊 Ver gráfico histórico de Carga vs ACWR", expanded=True):
             render_interactive_ecosystem_chart(st.session_state["df_actividades"])
 
