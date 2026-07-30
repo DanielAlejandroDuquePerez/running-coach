@@ -993,10 +993,8 @@ def calculate_pacing_splits(distancia_km: float, tiempo_objetivo_min: float, est
 
     return pd.DataFrame(parciales)
 
+# Función para calcular la Relación de Carga Aguda a Crónica (ACWR) y su interpretación
 def compute_acwr_ratio(carga_aguda: float, carga_cronica: float):
-    """
-    Calcula el ratio ACWR y retorna el estado de riesgo de lesión.
-    """
     if carga_cronica is None or carga_cronica <= 0:
         return 0.0, "Insuficiente carga crónica", "info", "Registra más semanas para establecer una base crónica confiable."
 
