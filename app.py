@@ -1,7 +1,9 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from plotly.subplots import make_subplots
 
 def make_responsive_chart(fig, height=320, title=""):
     """Aplica formato optimizado para touch y pantallas móviles."""
@@ -655,17 +657,7 @@ with tab_planning:
         with st.expander("📊 Ver gráfico histórico de Carga vs ACWR", expanded=True):
             render_interactive_ecosystem_chart(st.session_state["df_actividades"])
 
-    # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
-    if val_acwr > 1.3 or val_acwr < 0.8:
-        prompt_auto = (
-            f"Hola Coach, mi ratio ACWR actual es de {val_acwr:.2f} con una carga aguda de {km_agudos} km "
-            f"y crónica de {km_cronicos} km/sem. Mi estado actual es: {estado_acwr}. "
-            f"¿Qué ajustes específicos de descarga o intensidades me recomiendas para esta semana?"
-        )
-        if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
-            st.session_state["prompt_sugerido_ia"] = prompt_auto
-            st.info("👉 Se ha guardado la consulta. Ve a la pestaña **'Coach IA'** para enviarla.")
-            
+
     # Expander 2: Entradas / Ajuste Manual
     with st.expander("⚙️ Ingreso o Ajuste Manual de Carga", expanded=True):
         col_a1, col_a2 = st.columns(2)
@@ -689,6 +681,17 @@ with tab_planning:
             st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
         else:
             st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
+
+# 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
+    if val_acwr > 1.3 or val_acwr < 0.8:
+        prompt_auto = (
+            f"Hola Coach, mi ratio ACWR actual es de {val_acwr:.2f} con una carga aguda de {km_agudos} km "
+            f"y crónica de {km_cronicos} km/sem. Mi estado actual es: {estado_acwr}. "
+            f"¿Qué ajustes específicos de descarga o intensidades me recomiendas para esta semana?"
+        )
+        if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
+            st.session_state["prompt_sugerido_ia"] = prompt_auto
+            st.info("👉 Se ha guardado la consulta. Ve a la pestaña **'Coach IA'** para enviarla.")
             
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
