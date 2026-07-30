@@ -55,3 +55,4 @@ tzdata==2026.1
 urllib3==2.6.3
 watchdog==6.0.0
 websockets==16.1.1
+matplotlib==3.8.2
