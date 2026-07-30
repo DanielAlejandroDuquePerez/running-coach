@@ -16,6 +16,72 @@ def make_responsive_chart(fig, height=320, title=""):
     )
     return fig
 
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# --- FUNCIÓN PARA EL GRÁFICO COMBINADO VOLUMEN vs ACWR ---
+def render_interactive_ecosystem_chart(df):
+    if df is None or df.empty:
+        return
+
+    # Asegurar orden por fecha
+    df_copy = df.copy()
+    col_fecha = next((col for col in df_copy.columns if 'fecha' in col or 'date' in col), None)
+    col_dist = next((col for col in df_copy.columns if 'distancia' in col or 'km' in col or 'distance' in col), None)
+
+    if not col_fecha or not col_dist:
+        return
+
+    df_copy[col_fecha] = pd.to_datetime(df_copy[col_fecha])
+    df_copy['semana'] = df_copy[col_fecha].dt.to_period('W').dt.start_time
+    df_weekly = df_copy.groupby('semana')[col_dist].sum().reset_index()
+
+    # Cálculo dinámico de carga
+    df_weekly['cronica'] = df_weekly[col_dist].rolling(window=4, min_periods=1).mean()
+    df_weekly['acwr'] = df_weekly[col_dist] / df_weekly['cronica'].replace(0, 1)
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Barras de Volumen
+    fig.add_trace(
+        go.Bar(
+            x=df_weekly['semana'], 
+            y=df_weekly[col_dist], 
+            name="Volumen Semanal (Km)",
+            marker_color="#1E88E5",
+            opacity=0.7
+        ),
+        secondary_y=False
+    )
+
+    # Línea de ACWR
+    fig.add_trace(
+        go.Scatter(
+            x=df_weekly['semana'], 
+            y=df_weekly['acwr'], 
+            name="Ratio ACWR",
+            mode="lines+markers",
+            line=dict(color="#FFC107", width=3)
+        ),
+        secondary_y=True
+    )
+
+    # Líneas horizontales de riesgo
+    fig.add_hline(y=1.5, line_dash="dot", line_color="red", secondary_y=True)
+    fig.add_hline(y=0.8, line_dash="dot", line_color="green", secondary_y=True)
+
+    fig.update_layout(
+        title="<b>Evolución de Carga: Volumen Semanal vs ACWR</b>",
+        height=320,
+        margin=dict(l=10, r=10, t=35, b=20),
+        legend=dict(orientation="h", y=-0.2),
+        hovermode="x unified",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
     
 # 1. Configuración de la página (Debe ser la primera instrucción)
 st.set_page_config(
@@ -23,6 +89,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Inicialización del Cerebro Central de Datos
+if "df_actividades" not in st.session_state:
+    st.session_state["df_actividades"] = None
+if "km_agudos" not in st.session_state:
+    st.session_state["km_agudos"] = 40.0
+if "km_cronicos" not in st.session_state:
+    st.session_state["km_cronicos"] = 35.0
+if "prompt_sugerido_ia" not in st.session_state:
+    st.session_state["prompt_sugerido_ia"] = ""
 
 # --- INYECCIÓN CSS PARA DISEÑO RESPONSIVO Y TARJETAS PRO ---
 st.markdown("""
@@ -570,7 +646,26 @@ with tab_planning:
                 col_c1, col_c2 = st.columns(2)
                 col_c1.metric("Carga Aguda Detectada (7 días)", f"{km_agudos_val} km")
                 col_c2.metric("Carga Crónica Detectada (28d prom.)", f"{km_cronicos_val} km/sem")
+                
+    # 1. Si se cargó un DataFrame, guardar en session_state y mostrar el gráfico interconectado
+    if uploaded_file is not None and 'df_preview' in locals():
+        st.session_state["df_actividades"] = df_preview
+        
+    if st.session_state["df_actividades"] is not None:
+        with st.expander("📊 Ver gráfico histórico de Carga vs ACWR", expanded=True):
+            render_interactive_ecosystem_chart(st.session_state["df_actividades"])
 
+    # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
+    if val_acwr > 1.3 or val_acwr < 0.8:
+        prompt_auto = (
+            f"Hola Coach, mi ratio ACWR actual es de {val_acwr:.2f} con una carga aguda de {km_agudos} km "
+            f"y crónica de {km_cronicos} km/sem. Mi estado actual es: {estado_acwr}. "
+            f"¿Qué ajustes específicos de descarga o intensidades me recomiendas para esta semana?"
+        )
+        if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
+            st.session_state["prompt_sugerido_ia"] = prompt_auto
+            st.info("👉 Se ha guardado la consulta. Ve a la pestaña **'Coach IA'** para enviarla.")
+            
     # Expander 2: Entradas / Ajuste Manual
     with st.expander("⚙️ Ingreso o Ajuste Manual de Carga", expanded=True):
         col_a1, col_a2 = st.columns(2)
@@ -598,6 +693,13 @@ with tab_planning:
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
     st.caption("Generación de un plan adaptado a tu VDOT real, TSB, frescura y sensaciones de la semana.")
+
+#  MOSTRAR CONSULTA SUGERIDA DESDE ACWR SI EXISTE
+    if st.session_state.get("prompt_sugerido_ia"):
+        st.info(f"💡 **Consulta pendiente desde el módulo de ACWR:**\n\n_{st.session_state['prompt_sugerido_ia']}_")
+        if st.button("🧹 Limpiar sugerencia"):
+            st.session_state["prompt_sugerido_ia"] = ""
+            st.rerun()
 
     # 1. Botón para desencadenar la generación
     if st.button("⚡ Generar Plan Semanal con IA", type="primary"):
