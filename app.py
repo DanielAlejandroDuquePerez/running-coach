@@ -10,6 +10,7 @@ st.set_page_config(
 )
 
 # 2. Consolidación de importaciones
+from src.metrics import calculate_pacing_splits
 from src.storage import save_new_plan, load_all_plans, update_full_plan
 from src.data_loader import load_data
 from src.config import DATA_PATH
