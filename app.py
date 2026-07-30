@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from datetime import datetime, timedelta
 
 def make_responsive_chart(fig, height=320, title=""):
     """Aplica formato optimizado para touch y pantallas móviles."""
@@ -15,6 +16,7 @@ def make_responsive_chart(fig, height=320, title=""):
     )
     return fig
 
+    
 # 1. Configuración de la página (Debe ser la primera instrucción)
 st.set_page_config(
     page_title="Performance Dashboard",
@@ -497,18 +499,87 @@ with tab_planning:
             hide_index=True
         )
 
-    # ratio acwr para prevenir lesiones
+# FUNCIÓN AUXILIAR DE PROCESAMIENTO DE ARCHIVOS CSV / EXCEL
+    # ------------------------------------------------------------------
+    def process_uploaded_activities(file):
+        try:
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file, sheet_name=0)
+                
+            df.columns = [str(col).strip().lower() for col in df.columns]
+            col_fecha = next((col for col in df.columns if 'fecha' in col or 'date' in col), None)
+            col_dist = next((col for col in df.columns if 'distancia' in col or 'km' in col or 'distance' in col), None)
+            
+            if not col_fecha or not col_dist:
+                return None, "El archivo debe contener al menos una columna de 'Fecha' y una de 'Distancia_Km'."
+
+            df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce')
+            df[col_dist] = pd.to_numeric(df[col_dist], errors='coerce').fillna(0)
+            df = df.dropna(subset=[col_fecha]).sort_values(by=col_fecha, ascending=False)
+
+            if df.empty:
+                return None, "No se encontraron fechas válidas en el archivo."
+
+            fecha_max = df[col_fecha].max()
+            fecha_7d = fecha_max - pd.Timedelta(days=7)
+            fecha_28d = fecha_max - pd.Timedelta(days=28)
+
+            km_agudos = float(df[df[col_fecha] > fecha_7d][col_dist].sum())
+            km_totales_28d = float(df[df[col_fecha] > fecha_28d][col_dist].sum())
+            km_cronicos = km_totales_28d / 4.0 if km_totales_28d > 0 else 1.0
+
+            return {
+                "total_sesiones": len(df),
+                "fecha_reciente": fecha_max.strftime("%Y-%m-%d"),
+                "km_agudos": round(km_agudos, 1),
+                "km_cronicos": round(km_cronicos, 1)
+            }, None
+        except Exception as e:
+            return None, f"Error al procesar archivo: {str(e)}"
+
+    # ------------------------------------------------------------------
+    # MÓDULO DE PREVENCIÓN DE LESIONES: RATIO ACWR + FILE UPLOADER
+    # ------------------------------------------------------------------
     st.markdown("---")
     st.subheader("🛡️ Prevención de Lesiones: Ratio ACWR")
-    st.caption("Monitorea la relación entre el esfuerzo de la última semana y tu base histórica.")
+    st.caption("Sincroniza tu historial de entrenamiento desde un archivo o ajusta los valores manualmente.")
 
-    col_a1, col_a2 = st.columns(2)
-    with col_a1:
-        km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=40.0, step=1.0))
-    with col_a2:
-        km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0))
+    # Valores por defecto para fallback manual
+    km_agudos_val = 40.0
+    km_cronicos_val = 35.0
 
-    # Llamada a la nueva función
+    # Expander 1: Carga de Archivos Automática
+    with st.expander("📁 Cargar Historial desde Archivo (CSV / Excel)", expanded=False):
+        uploaded_file = st.file_uploader(
+            "Selecciona tu archivo de entrenamiento (.csv o .xlsx)", 
+            type=["csv", "xlsx"],
+            help="El archivo debe tener columnas de Fecha y Distancia (Km)."
+        )
+
+        if uploaded_file is not None:
+            resumen_file, err_file = process_uploaded_activities(uploaded_file)
+            if err_file:
+                st.error(f"❌ {err_file}")
+            else:
+                st.success(f"✅ Historial cargado. Última actividad: **{resumen_file['fecha_reciente']}** ({resumen_file['total_sesiones']} registros).")
+                km_agudos_val = resumen_file["km_agudos"]
+                km_cronicos_val = resumen_file["km_cronicos"]
+
+                col_c1, col_c2 = st.columns(2)
+                col_c1.metric("Carga Aguda Detectada (7 días)", f"{km_agudos_val} km")
+                col_c2.metric("Carga Crónica Detectada (28d prom.)", f"{km_cronicos_val} km/sem")
+
+    # Expander 2: Entradas / Ajuste Manual
+    with st.expander("⚙️ Ingreso o Ajuste Manual de Carga", expanded=True):
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=km_agudos_val, step=1.0))
+        with col_a2:
+            km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal 28 días):", min_value=1.0, max_value=200.0, value=km_cronicos_val, step=1.0))
+
+    # Cálculo y Visualización del ACWR
     val_acwr, estado_acwr, tipo_alerta, desc_acwr = compute_acwr_ratio(km_agudos, km_cronicos)
 
     col_m1, col_m2 = st.columns([1, 2])
@@ -523,7 +594,7 @@ with tab_planning:
             st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
         else:
             st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
-
+            
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
     st.caption("Generación de un plan adaptado a tu VDOT real, TSB, frescura y sensaciones de la semana.")
