@@ -992,3 +992,31 @@ def calculate_pacing_splits(distancia_km: float, tiempo_objetivo_min: float, est
         })
 
     return pd.DataFrame(parciales)
+
+def calculate_acwr(carga_aguda: float, carga_cronica: float):
+    """
+    Calcula el ratio ACWR (Acute-to-Chronic Workload Ratio) y evalúa el nivel de riesgo de lesión.
+    """
+    if carga_cronica <= 0:
+        return 0.0, "Insuficiente carga crónica", "info", "Registra más semanas para establecer una base crónica confiable."
+
+    acwr = carga_aguda / carga_cronica
+
+    if acwr < 0.8:
+        estado = "⚠️ Subentrenamiento / Descarga"
+        tipo_alerta = "warning"
+        desc = "Carga por debajo de la base. Útil para semanas de descarga, pero prolongado causa pérdida de condición física."
+    elif 0.8 <= acwr <= 1.3:
+        estado = "✅ Zona Dulce (Sweet Spot)"
+        tipo_alerta = "success"
+        desc = "Progresión de volumen ideal. Maximiza las adaptaciones aeróbicas manteniendo el riesgo de lesión al mínimo."
+    elif 1.3 < acwr <= 1.5:
+        estado = "⚡ Precaución (Sobrecarga Moderada)"
+        tipo_alerta = "warning"
+        desc = "Aumento acelerado de carga. Monitorea sensaciones de fatiga y calidad del sueño para no cruzar el límite."
+    else:
+        estado = "🚨 Zona de Peligro (Spike in Load)"
+        tipo_alerta = "error"
+        desc = "Pico drástico de volumen (>50% sobre la base). El riesgo estadístico de sufrir lesión muscular o articular se dispara."
+
+    return acwr, estado, tipo_alerta, desc

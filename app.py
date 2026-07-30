@@ -10,6 +10,7 @@ st.set_page_config(
 )
 
 # 2. Consolidación de importaciones
+from src.metrics import calculate_vdot, calculate_pacing_splits, calculate_acwr
 from src.metrics import calculate_pacing_splits
 from src.storage import save_new_plan, load_all_plans, update_full_plan
 from src.data_loader import load_data
@@ -392,6 +393,31 @@ with tab_planning:
             hide_index=True
         )
 
+# ratio acwr 
+    st.markdown("---")
+    st.subheader("🛡️ Prevención de Lesiones: Ratio ACWR")
+    st.caption("Monitorea la relación entre el esfuerzo de la última semana y tu base histórica para evitar picos destructivos de volumen.")
+
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        km_agudos = st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=40.0, step=1.0)
+    with col_a2:
+        km_cronicos = st.number_input("Carga Crónica (Promedio semanal últimos 28 días):", min_value=1.0, max_value=200.0, value=35.0, step=1.0)
+
+    val_acwr, estado_acwr, tipo_alerta, desc_acwr = calculate_acwr(km_agudos, km_cronicos)
+
+    col_m1, col_m2 = st.columns([1, 2])
+    with col_m1:
+        st.metric("Ratio ACWR Actual", f"{val_acwr:.2f}")
+    with col_m2:
+        if tipo_alerta == "success":
+            st.success(f"**{estado_acwr}**\n\n{desc_acwr}")
+        elif tipo_alerta == "warning":
+            st.warning(f"**{estado_acwr}**\n\n{desc_acwr}")
+        elif tipo_alerta == "error":
+            st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
+        else:
+            st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
 
 # --- PESTAÑA 3: COACH IA ---
 with tab_ai:
