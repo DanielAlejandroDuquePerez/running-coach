@@ -1,0 +1,13 @@
+# Entorno virtual local
+venv/
+.venv/
+
+# Variables de entorno secretas (¡MUY IMPORTANTE!)
+.env
+
+# Archivos de caché de Python
+__pycache__/
+*.pyc
+
+# Datos locales temporales o de prueba (Opcional, según prefieras)
+.streamlit/secrets.toml
