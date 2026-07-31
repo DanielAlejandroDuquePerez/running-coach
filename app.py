@@ -279,7 +279,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. Consolidación de importaciones
-from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio
+from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio, calculate_acwr
 from src.metrics import calculate_pacing_splits
 from src.storage import save_new_plan, load_all_plans, update_full_plan
 from src.data_loader import load_data
@@ -489,178 +489,150 @@ st.markdown("---")
 render_stress_alert(data)
 
 # 7. Arquitectura de Pestañas
-tab_dashboard, tab_planning, tab_ai, tab_history, tab_seguimiento = st.tabs([
-    "Resumen Semanal", 
-    "Planificación Fisiológica", 
-    "Análisis de Inteligencia Artificial", 
-    "Historial y Tendencias",
-    "Seguimiento & Adherencia"
+tabs = st.tabs([
+    "🏠 Tablero Hoy",
+    "🎯 Ritmos & Marcas",
+    "📊 Historial de Carga y Gestión de Archivos",
+    "🤖 Coach IA",
+    "📓 Seguimiento",
 ])
+tab_hoy = tabs[0]
+tab_ritmos = tabs[1]
+tab_analitica = tabs[2]
+tab_ai = tabs[3]
+tab_seguimiento = tabs[4]
+with tab_hoy:
+    st.title("🏃 Running Coach — Performance Hub")
+    st.caption("Resumen diario de predisposición, carga de entrenamiento y balance de rendimiento.")
+    today_acwr = calculate_acwr(filtered)
 
-# --- PESTAÑA 1: DASHBOARD SEMANAL ---
-with tab_dashboard:
-    # Métricas de alto nivel
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Sesiones", runs)
-    col2.metric("Volumen (Km)", round(total, 1))
-    col3.metric("Ritmo Promedio", f"{round(avg, 2)} /km")
-    col4.metric("Mejor Ritmo", f"{round(best, 2)} /km")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    with st.expander("📊 Ver gráficos y tendencias", expanded=False):
-        render_kpi_dashboard(data)
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            render_acwr_card(data)
-        with col_b:
-            render_polarization_card(data)
-            
-        render_weekly_metrics({"weekly_km": weekly_km})
+    feedback_data = st.session_state.get("feedback_data", {})
+    rpe_promedio = float(feedback_data.get("fatigue_rpe", 5))
+    dias_descanso_recientes = max((date.today() - filtered["Activity Date"].max().date()).days, 0)
+    readiness_score, readiness_state, readiness_badge = calculate_training_readiness(
+        acwr=today_acwr.get("acwr", 0.0),
+        rpe_promedio=rpe_promedio,
+        dias_descanso_recientes=dias_descanso_recientes,
+    )
 
-# --- PESTAÑA 2: PLANIFICACIÓN Y ZONAS ---
-with tab_planning:
-    st.subheader("Modelo de Jack Daniels")
-    render_vdot_calculator_section(data)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("Distribución de Carga")
-    render_daniels_chart(data)
-
-# --- PREDICCIÓN DE TIEMPOS DE CARRERA ---
-    st.subheader("⏱️ Predicción de Tiempos de Carrera (Modelo Riegel)")
-    st.caption("Proyección de ritmos y tiempos objetivo calculados a partir de tu mejor sesión reciente.")
-    
-    race_data = predict_race_times(filtered)
-    
-    if race_data is None:
-        st.info("Registra al menos un entrenamiento mayor a 3 km para activar el calculador de tiempos.")
-    else:
-        ref = race_data["ref_run"]
-        predictions_df = race_data["predictions"]
-        
-        # Tarjeta informativa sobre la sesión tomada como referencia
-        ref_date = str(ref.get('Activity Date', 'Reciente'))[:10]
-        st.markdown(
-            f"> 💡 **Sesión de Referencia Detectada:** {ref.get('Activity Name', 'Entrenamiento')} "
-            f"({ref['Distance']:.2f} km a {ref['pace_min_km']:.2f} min/km el {ref_date})"
-        )
-        
-        # Renderizamos los resultados en 4 tarjetas métricas interactivas
-        cols = st.columns(4)
-        for idx, row in predictions_df.iterrows():
-            with cols[idx]:
-                st.metric(
-                    label=row["Distancia"],
-                    value=row["Tiempo Estimado"],
-                    delta=f"Ritmo: {row['Ritmo Objetivo']}",
-                    delta_color="normal"
-                )
-                
-        st.markdown("---")
-
-# --- MONITOR DE FRESCURA Y FATIGA (TSB) ---
-    st.subheader("🛡️ Monitor de Frescura y Fatiga (Modelo TSB)")
-    st.caption("Control de Carga Crónica (Forma) vs. Carga Aguda (Fatiga) en los últimos 30 días.")
-    
-    tsb_data = calculate_tsb_metrics(filtered)
-    
-    if tsb_data is None:
-        st.info("No hay suficientes datos de fechas para calcular las métricas TSB.")
-    else:
-        # 1. Indicadores Métricos
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Forma Física (CTL)", f"{tsb_data['current_ctl']} km/día", help="Base acumulada a 42 días")
-        c2.metric("Fatiga Reciente (ATL)", f"{tsb_data['current_atl']} km/día", help="Estrés de los últimos 7 días")
-        c3.metric("Frescura (TSB)", f"{tsb_data['current_tsb']}", help="Diferencia: CTL - ATL")
-        
-        # 2. Mensaje de Estado
-        if tsb_data['state'] == "success":
-            st.success(f"🟢 **{tsb_data['verdict']}**")
-        elif tsb_data['state'] == "warning":
-            st.warning(f"🟡 **{tsb_data['verdict']}**")
-        elif tsb_data['state'] == "error":
-            st.error(f"🔴 **{tsb_data['verdict']}**")
+    # 1. Tarjeta de Readiness
+    readiness_col, readiness_note = st.columns([1.1, 1.4])
+    with readiness_col:
+        st.metric("Readiness de Hoy", f"{int(readiness_score)} / 100")
+        st.progress(readiness_score / 100)
+    with readiness_note:
+        if readiness_badge == "success":
+            st.success(f"🟢 {readiness_state}")
+        elif readiness_badge == "warning":
+            st.warning(f"🟡 {readiness_state}")
         else:
-            st.info(f"🔵 **{tsb_data['verdict']}**")
-            
-        # 3. Gráfico Interactivo de Tendencia
-        st.markdown("**Evolución de Forma, Fatiga y Frescura (Últimos 30 días)**")
-        st.line_chart(tsb_data["daily_df"])
-        
-    st.markdown("---")
+            st.error(f"🔴 {readiness_state}")
+        st.caption(
+            f"Calculado con ACWR {today_acwr.get('acwr', 0.0):.2f}, RPE {rpe_promedio:.0f} y {dias_descanso_recientes} día(s) de recuperación reciente."
+        )
 
-# --- CALCULADORA DINÁMICA DE VDOT Y ZONAS DE JACK DANIELS ---
-    st.subheader("🎯 Zonas Personalizadas de Entrenamiento (Metodología Jack Daniels)")
-    
-    # 1. Calculamos el VDOT dinámico
-    vdot_calc, vdot_ref = get_vdot_from_df(filtered)
-    
-    if vdot_calc:
-        c_vdot1, c_vdot2 = st.columns([1, 2])
-        with c_vdot1:
-            st.metric(
-                label="Índice VDOT Calculado",
-                value=f"{vdot_calc}",
-                help="Índice de capacidad aeróbica equivalente calculado a partir de tu mejor sesión reciente."
-            )
-        with c_vdot2:
-            if vdot_ref:
-                st.info(
-                    f"💡 **Base de Cálculo:** Basado en tu sesión *'{vdot_ref.get('name')}'* "
-                    f"({vdot_ref.get('distance')} km a {vdot_ref.get('pace'):.2f} min/km el {vdot_ref.get('date')})."
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 2. Métricas clave
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("ACWR", f"{today_acwr.get('acwr', 0.0):.2f}")
+    metric_cols[1].metric("Carga Aguda", f"{today_acwr.get('carga_aguda', 0.0):.1f} km")
+    metric_cols[2].metric("Carga Crónica", f"{today_acwr.get('carga_cronica', 0.0):.1f} km")
+
+    # 3. Gráfico Interactivo Combinado
+    st.markdown("### 📈 Volumen vs ACWR")
+    render_interactive_ecosystem_chart(filtered)
+
+    # 4. Alerta inteligente con CTA al Coach IA
+    if today_acwr.get("status") in {"caution", "danger"}:
+        if today_acwr["status"] == "danger":
+            st.error(today_acwr["message"])
+        else:
+            st.warning(today_acwr["message"])
+
+        prompt_auto = (
+            f"Hola Coach, hoy tengo un ACWR de {today_acwr.get('acwr', 0.0):.2f}, "
+            f"con carga aguda de {today_acwr.get('carga_aguda', 0.0):.1f} km y carga crónica de {today_acwr.get('carga_cronica', 0.0):.1f} km. "
+            f"Mi readiness actual es {int(readiness_score)} / 100. ¿Qué ajuste me recomiendas para esta semana?"
+        )
+
+        if st.button("🤖 Enviar alerta al Coach IA", type="primary", use_container_width=True):
+            st.session_state["prompt_sugerido_ia"] = prompt_auto
+            st.info("La consulta quedó lista en la pestaña Coach IA.")
+    else:
+        st.success(today_acwr["message"])
+
+# --- PESTAÑA 2: RITMOS Y MARCAS ---
+with tab_ritmos:
+    st.subheader("🎯 Control de Ritmos y Predictor de Competencia")
+    st.caption("Ajusta tu marca de referencia para proyectar tiempos objetivo y zonas fisiológicas.")
+
+    col_ref_1, col_ref_2 = st.columns(2)
+    with col_ref_1:
+        dist_base = st.selectbox(
+            "Distancia de referencia (km)",
+            [3.0, 5.0, 10.0, 15.0, 21.1],
+            index=1,
+        )
+    with col_ref_2:
+        tiempo_base = st.number_input(
+            "Tiempo de referencia (minutos)",
+            min_value=5.0,
+            max_value=300.0,
+            value=25.0,
+            step=0.5,
+        )
+
+    # 2. Tarjetas de Race Predictor (5K, 10K, 15K, 21K)
+    predictions = calculate_race_predictions(dist_base, tiempo_base)
+    if not predictions:
+        st.info("Ingresa una marca de referencia válida para activar el predictor de competencia.")
+    else:
+        st.markdown("### 🏁 Race Predictor")
+        pred_cols = st.columns(4)
+        for idx, (label, info) in enumerate(predictions.items()):
+            with pred_cols[idx]:
+                st.metric(
+                    label=label,
+                    value=info["tiempo"],
+                    delta=f"Ritmo: {info['ritmo']}",
+                    delta_color="normal",
                 )
-        
-        # 2. Obtenemos y mostramos la tabla de zonas
+
+    st.markdown("---")
+
+    # 3. Acordeones con zonas fisiológicas Z2 a Z5
+    st.subheader("🧬 Zonas Fisiológicas de Entrenamiento")
+    vdot_calc, vdot_ref = get_vdot_from_df(filtered)
+
+    if not vdot_calc:
+        st.info("No fue posible calcular un VDOT de referencia con los datos filtrados.")
+    else:
+        if vdot_ref:
+            st.caption(
+                f"Base usada: {vdot_ref.get('name')} ({vdot_ref.get('distance')} km a {vdot_ref.get('pace'):.2f} min/km el {vdot_ref.get('date')})."
+            )
+
         df_zones = get_jack_daniels_zones(vdot_calc)
-        st.dataframe(
-            df_zones,
-            column_config={
-                "Zona de Entrenamiento": st.column_config.TextColumn("Zona", width="medium"),
-                "Código": st.column_config.TextColumn("Código", width="small"),
-                "Rango de Ritmo (min/km)": st.column_config.TextColumn("Ritmo Objetivo", width="medium"),
-                "Propósito Fisiológico": st.column_config.TextColumn("Propósito Fisiológico", width="large"),
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-    st.markdown("---")
+        zone_map = {
+            "Z2": "Easy / Rodaje Suave (E)",
+            "Z3": "Marathon Pace (M)",
+            "Z4": "Threshold / Umbral (T)",
+            "Z5": "Interval / VO2Max (I)",
+        }
 
-    st.markdown("---")
-    st.subheader("🏁 Estrategia de Carrera & Calculadora de Parciales (Pace Band)")
-    st.caption("Estructura la táctica de ritmo kilómetro a kilómetro para tu próxima competencia objetivo.")
+        for zone_code, zone_name in zone_map.items():
+            zone_row = df_zones[df_zones["Código"].str.contains(zone_code, na=False)]
+            if zone_row.empty:
+                zone_row = df_zones[df_zones["Zona de Entrenamiento"].str.contains(zone_name.split(" /")[0], case=False, na=False)]
 
-    col_p1, col_p2, col_p3 = st.columns(3)
-    with col_p1:
-        dist_carrera = st.selectbox("Distancia Objetivo:", [5.0, 10.0, 15.0, 21.1], index=1)
-    with col_p2:
-        tiempo_target = st.number_input("Tiempo Objetivo (minutos):", min_value=15.0, max_value=300.0, value=45.0, step=0.5)
-    with col_p3:
-        estrategia_sel = st.selectbox("Estrategia de Ritmo:", ["Negative Split", "Ritmo Uniforme", "Positive Split"])
-
-    if st.button("📊 Calcular Parciales de Carrera", type="primary"):
-        df_splits = calculate_pacing_splits(dist_carrera, tiempo_target, estrategia_sel)
-        
-        # Gráfica de Ritmo km a km
-        fig_splits = px.line(
-            df_splits,
-            x="Km",
-            y="Ritmo_Segundos",
-            text="Ritmo Prescrito (min/km)",
-            title=f"Perfil de Ritmo Proyectado ({estrategia_sel})",
-            markers=True
-        )
-        fig_splits.update_traces(textposition="top center")
-        fig_splits.update_yaxes(title="Ritmo (Segundos/km)", autorange="reversed") # Invertido: arriba es más rápido
-        st.plotly_chart(fig_splits, use_container_width=True)
-
-        # Tabla limpia de parciales
-        st.dataframe(
-            df_splits[["Km", "Ritmo Prescrito (min/km)", "Tiempo Acumulado"]],
-            use_container_width=True,
-            hide_index=True
-        )
+            with st.expander(f"{zone_code} - {zone_name}", expanded=False):
+                if zone_row.empty:
+                    st.info("No se encontró información para esta zona.")
+                else:
+                    row = zone_row.iloc[0]
+                    st.metric("Rango de Ritmo", row["Rango de Ritmo (min/km)"])
+                    st.markdown(f"**Propósito fisiológico:** {row['Propósito Fisiológico']}")
 
 # FUNCIÓN AUXILIAR DE PROCESAMIENTO DE ARCHIVOS CSV / EXCEL
     # ------------------------------------------------------------------
@@ -912,89 +884,227 @@ with tab_ai:
         # Mostrar el plan generado en pantalla
         st.markdown(st.session_state["current_ai_plan"])
 
-# --- PESTAÑA 4: HISTORIAL DE DATOS ---
-with tab_history:
-    # 1. DIAGNÓSTICO PRINCIPAL INTEGRAL
-    st.subheader("Estado de Rendimiento Integral")
-    
-    col_ritmo, col_corazon = st.columns(2)
-    
-    with col_ritmo:
-        st.markdown("##### Análisis Biomecánico (Ritmo)")
-        performance = performance_status(filtered)
-        if performance["change"] > 0.3:
-            st.success("Progreso detectado: El ritmo promedio está en mejora continua, indicando un estado óptimo.")
-        elif performance["change"] < -0.3:
-            st.warning("Alerta de rendimiento: Caída reciente en las métricas de ritmo. Se sugiere priorizar la recuperación.")
-        else:
-            st.info("Mantenimiento: Rendimiento biomecánico estable y consolidado.")
-            
-    with col_corazon:
-        st.markdown("##### Análisis Fisiológico (Eficiencia Aeróbica)")
-        ef_status = aerobic_efficiency_status(filtered)
-        
-        if ef_status["status"] == "no_data":
-            st.info("Sin registros de frecuencia cardíaca en el archivo o rango seleccionado.")
-        elif ef_status["status"] == "insufficient_data":
-            st.info("Datos de pulso insuficientes para calcular la tendencia de eficiencia.")
-        else:
-            if ef_status["state"] == "positive":
-                st.success(f"{ef_status['verdict']} (EF: {ef_status['recent_ef']})")
-            elif ef_status["state"] == "negative":
-                st.warning(f"{ef_status['verdict']} (EF: {ef_status['recent_ef']})")
+# --- PESTAÑA 3: HISTORIAL DE CARGA Y GESTIÓN DE ARCHIVOS ---
+with tab_analitica:
+    st.subheader("📊 Historial de Carga y Gestión de Archivos")
+    st.caption("Sincroniza tus registros (.csv / .xlsx) y examina el desglose detallado de actividades.")
+
+    def process_uploaded_activities(file):
+        try:
+            if file.name.lower().endswith(".csv"):
+                df = pd.read_csv(file)
             else:
-                st.info(f"{ef_status['verdict']} (EF: {ef_status['recent_ef']})")
-                
+                df = pd.read_excel(file, sheet_name=0)
+
+            df.columns = [str(col).strip() for col in df.columns]
+            lower_map = {col.lower(): col for col in df.columns}
+
+            fecha_col = next((lower_map[key] for key in lower_map if "fecha" in key or "date" in key), None)
+            dist_col = next((lower_map[key] for key in lower_map if "distancia" in key or "distance" in key or "km" == key), None)
+
+            if not fecha_col or not dist_col:
+                return None, "El archivo debe incluir al menos una columna de fecha y una de distancia."
+
+            df[fecha_col] = pd.to_datetime(df[fecha_col], errors="coerce")
+            df[dist_col] = pd.to_numeric(df[dist_col], errors="coerce")
+            df = df.dropna(subset=[fecha_col]).copy()
+            df = df.sort_values(by=fecha_col, ascending=False)
+
+            display_df = df[[fecha_col, dist_col]].copy()
+            display_df.columns = ["Fecha", "Distancia"]
+            if "Activity Name" in df.columns:
+                display_df.insert(1, "Actividad", df["Activity Name"].astype(str).values)
+
+            return display_df, None
+        except Exception as exc:
+            return None, f"Error al procesar archivo: {exc}"
+
+    uploaded_file = st.file_uploader(
+        "Cargar historial de entrenamiento",
+        type=["csv", "xlsx"],
+        help="Sube un archivo con tus actividades para revisar el historial de carga.",
+    )
+
+    if uploaded_file is not None:
+        uploaded_df, upload_error = process_uploaded_activities(uploaded_file)
+        if upload_error:
+            st.error(upload_error)
+        else:
+            st.session_state["df_actividades"] = uploaded_df
+            st.success(f"Historial cargado: {len(uploaded_df)} registros procesados.")
+
+    df_actividades = st.session_state.get("df_actividades")
+    if df_actividades is not None and not df_actividades.empty:
+        st.markdown("### Actividades procesadas")
+        st.dataframe(df_actividades, use_container_width=True, hide_index=True)
+    else:
+        st.info("Carga un archivo para ver aquí tu historial procesado.")
+
     st.markdown("---")
-    
-    # 2. ANÁLISIS INDIVIDUAL POR SESIÓN (Líneas con colores de acento)
-    if mostrar_grafica:
-        with st.expander("📈 Ver gráficas de tendencia", expanded=False):
-            col_graf1, col_graf2 = st.columns(2)
-            
-            with col_graf1:
-                st.subheader("Volumen por Actividad")
-                # Aplicamos el naranja principal
-                st.line_chart(filtered.set_index("Activity Date")["Distance"], color="#FC4C02")
-                
-            with col_graf2:
-                st.subheader("Evolución de Ritmo")
-                # Aplicamos un cian brillante para contrastar la velocidad
-                st.line_chart(filtered.set_index("Activity Date")["pace_min_km"], color="#00E5FF")
-        
-            st.markdown("---")
-            
-            # 3. TENDENCIA AGREGADA (Ocupando todo el ancho para facilitar la lectura a largo plazo)
-            st.subheader("Tendencia Semanal de Ritmo")
-            weekly_pace_data = weekly_pace(filtered)
-            st.line_chart(weekly_pace_data.set_index("label")["pace_min_km"], color="#FC4C02")
-    
-    # 4. DATOS CRUDOS (Al final de la página)
-    # 4. DATOS CRUDOS (Al final de la página)
-    if mostrar_tabla:
-        st.markdown("---")
-        st.subheader("Registro Tabular")
-        
-        # 1. Filtramos y hacemos una copia de las columnas de interés
-        df_display = filtered[["Activity Date", "Activity Name", "Distance", "pace_min_km"]].copy()
-        
-        # 2. Aplicamos el estilo de Pandas (Mapa de calor)
-        # Usamos el mapa de color 'viridis_r' (invertido) para que los ritmos más bajos 
-        # (más rápidos) brillen en tonos amarillos/verdes, ideal para el Dark Mode.
-        styled_df = df_display.style.background_gradient(
-            subset=['pace_min_km'], 
-            cmap='viridis_r' 
-        ).format({
-            "Distance": "{:.2f} km",
-            "pace_min_km": "{:.2f} /km"
-        })
-        
-        # 3. Renderizamos la tabla estilizada en Streamlit
-        st.dataframe(
-            styled_df,
-            use_container_width=True,
-            hide_index=True 
+    st.subheader("⚙️ Ajuste manual de kilometraje")
+    st.caption("Ajusta la carga aguda y crónica para recalcular tu ACWR de forma rápida.")
+
+    km_agudos_manual = st.number_input(
+        "Carga aguda (km última semana)",
+        min_value=0.0,
+        max_value=250.0,
+        value=float(st.session_state.get("km_agudos", 40.0)),
+        step=1.0,
+    )
+    km_cronicos_manual = st.number_input(
+        "Carga crónica (km promedio semanal)",
+        min_value=1.0,
+        max_value=250.0,
+        value=float(st.session_state.get("km_cronicos", 35.0)),
+        step=1.0,
+    )
+
+    st.session_state["km_agudos"] = float(km_agudos_manual)
+    st.session_state["km_cronicos"] = float(km_cronicos_manual)
+
+    acwr_manual, estado_acwr_manual, tipo_alerta_manual, desc_acwr_manual = compute_acwr_ratio(
+        km_agudos_manual,
+        km_cronicos_manual,
+    )
+
+    metric_manual_1, metric_manual_2 = st.columns(2)
+    with metric_manual_1:
+        st.metric("ACWR Manual", f"{acwr_manual:.2f}")
+    with metric_manual_2:
+        if tipo_alerta_manual == "success":
+            st.success(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+        elif tipo_alerta_manual == "warning":
+            st.warning(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+        elif tipo_alerta_manual == "error":
+            st.error(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+        else:
+            st.info(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+
+with tab_ai:
+    st.subheader("🤖 Coach IA — Planificación Personalizada")
+    st.caption("Ajusta tu microciclo semanal considerando tus sensaciones, VDOT y nivel de fatiga.")
+
+    # 1. Lectura del prompt_sugerido_ia (Si proviene de una alerta de ACWR/Readiness)
+    if st.session_state.get("prompt_sugerido_ia"):
+        st.info(
+            f"💡 **Consulta pendiente desde otro módulo:**\n\n_{st.session_state['prompt_sugerido_ia']}_"
         )
+        if st.button("🧹 Limpiar sugerencia", key="btn_limpiar_sugerencia_ia"):
+            st.session_state["prompt_sugerido_ia"] = ""
+            st.rerun()
+
+    # 2. Formulario de sensaciones del usuario
+    st.markdown("### 📝 Formulario de sensaciones")
+    with st.form("form_coach_ia"):
+        col_form_1, col_form_2 = st.columns(2)
+
+        with col_form_1:
+            fatigue_rpe = st.slider(
+                "Fatiga percibida (1-10)",
+                min_value=1,
+                max_value=10,
+                value=int(st.session_state.get("feedback_data", {}).get("fatigue_rpe", 3)),
+            )
+            sleep_quality = st.select_slider(
+                "Calidad del sueño",
+                options=["Mala", "Regular", "Buena", "Excelente"],
+                value=st.session_state.get("feedback_data", {}).get("sleep_quality", "Buena"),
+            )
+
+        with col_form_2:
+            stress_level = st.selectbox(
+                "Estrés externo",
+                options=["Bajo", "Moderado", "Alto"],
+                index=["Bajo", "Moderado", "Alto"].index(st.session_state.get("feedback_data", {}).get("stress_level", "Moderado")),
+            )
+            discomforts = st.multiselect(
+                "Molestias físicas",
+                options=[
+                    "Ninguna",
+                    "Gemelos / Sóleo",
+                    "Rodilla",
+                    "Isquiotibiales",
+                    "Planta del pie / Fascia",
+                    "Cadera / Glúteo",
+                    "Espalda baja",
+                ],
+                default=st.session_state.get("feedback_data", {}).get("discomforts", ["Ninguna"]),
+            )
+
+        user_notes = st.text_area(
+            "Notas adicionales",
+            value=st.session_state.get("feedback_data", {}).get("notes", ""),
+            placeholder="Ej: El rodaje del martes se sintió pesado o tengo poco tiempo para entrenar...",
+            height=100,
+        )
+
+        generate_plan = st.form_submit_button("⚡ Generar Plan Semanal con IA", type="primary")
+
+    # 3. Botón de generación del plan semanal
+    if generate_plan:
+        st.session_state["feedback_data"] = {
+            "fatigue_rpe": fatigue_rpe,
+            "sleep_quality": sleep_quality,
+            "stress_level": stress_level,
+            "discomforts": discomforts,
+            "notes": user_notes,
+        }
+
+        with st.spinner("Sintetizando sensaciones, VDOT y cargas para crear el plan..."):
+            stats = basic_stats(filtered_data)
+
+            if isinstance(stats, tuple):
+                weekly_km_val = stats[0] if len(stats) > 0 else 0
+                avg_pace_val = stats[1] if len(stats) > 1 else "N/A"
+            elif isinstance(stats, dict):
+                weekly_km_val = stats.get("total_distance", 0)
+                avg_pace_val = stats.get("avg_pace", "N/A")
+            else:
+                weekly_km_val, avg_pace_val = 0, "N/A"
+
+            metrics_summary = {
+                "weekly_km": weekly_km_val,
+                "avg_pace": avg_pace_val,
+                "zone_distribution": {},
+            }
+
+            vdot_real, _ = get_vdot_from_df(filtered_data)
+            generated_text = ask_ai_coach(
+                metrics_summary=metrics_summary,
+                df=filtered_data,
+                feedback_data=st.session_state.get("feedback_data", None),
+                vdot_actual=vdot_real,
+            )
+
+            st.session_state["current_ai_plan"] = generated_text
+
+    if st.session_state.get("current_ai_plan"):
+        st.markdown("---")
+        st.markdown("### 📄 Plan Semanal Generado")
+
+        col_actions1, col_actions2 = st.columns(2)
+
+        with col_actions1:
+            st.download_button(
+                label="📥 Descargar Plan (.md)",
+                data=st.session_state["current_ai_plan"],
+                file_name="Plan_Semanal_Running_Coach.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+
+        with col_actions2:
+            if st.button("💾 Guardar Plan en Base de Datos", use_container_width=True, type="secondary"):
+                vdot_real, _ = get_vdot_from_df(filtered_data)
+                saved_record = save_new_plan(
+                    vdot=vdot_real,
+                    km_objetivo=40.0,
+                    plan_markdown=st.session_state["current_ai_plan"],
+                    feedback_atleta=st.session_state.get("feedback_data", {}),
+                )
+                st.success(f"✅ Plan guardado exitosamente (ID: `{saved_record['id']}`).")
+
+        st.markdown(st.session_state["current_ai_plan"])
 
 # --- PESTAÑA 4: SEGUIMIENTO Y ADHERENCIA ---
 with tab_seguimiento:
