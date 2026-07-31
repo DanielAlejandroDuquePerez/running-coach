@@ -739,60 +739,7 @@ with tab_ritmos:
             st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
         else:
             st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
-# ------------------------------------------------------------------
-    # TARJETA TIPO GARMIN: PREDISPOSICIÓN AL ENTRENAMIENTO (READINESS)
-    # ------------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("⌚ Nivel de Predisposición al Entrenamiento (Training Readiness)")
-    st.caption("Indicador holístico de preparación diaria basado en tu balance de carga y fatiga.")
 
-    # Calcular score con los valores actuales del estado
-    readiness_score, estado_readiness, tipo_badge = calculate_training_readiness(
-        acwr=val_acwr, 
-        rpe_promedio=6.0,  # O el promedio extraído del archivo
-        dias_descanso_recientes=1
-    )
-
-    col_r1, col_r2 = st.columns([1, 2])
-    with col_r1:
-        st.metric("Predisposición Hoy", f"{int(readiness_score)} / 100")
-    with col_r2:
-        if tipo_badge == "success":
-            st.success(f"🟢 **{estado_readiness}**")
-        elif tipo_badge == "warning":
-            st.warning(f"🟡 **{estado_readiness}**")
-        else:
-            st.error(f"🔴 **{estado_readiness}**")
-
-    # Progreso visual
-    st.progress(readiness_score / 100.0)
-
-# ------------------------------------------------------------------
-    # PREDICTOR DE MARCAS DE COMPETENCIA (GARMIN RACE PREDICTOR)
-    # ------------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("🏁 Predictor de Tiempos de Competencia")
-    st.caption("Proyección de marcas potenciales según tu rendimiento reciente (Fórmula de Riegel).")
-
-    # Tomar de base una marca de referencia (ej. un 10K reciente o un test de 5K)
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        dist_base = st.number_input("Distancia de referencia reciente (km):", min_value=1.0, max_value=50.0, value=10.0, step=0.5)
-    with col_p2:
-        tiempo_base = st.number_input("Tiempo registrado (minutos):", min_value=5.0, max_value=300.0, value=48.0, step=0.5)
-
-    predicciones = calculate_race_predictions(dist_base, tiempo_base)
-
-    if predicciones:
-        cols = st.columns(4)
-        for idx, (dist_name, info) in enumerate(predicciones.items()):
-            with cols[idx]:
-                st.metric(
-                    label=f"🎯 {dist_name}",
-                    value=info["tiempo"],
-                    delta=f"Ritmo: {info['ritmo']}",
-                    delta_color="off"
-                )
 
 # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
     if val_acwr > 1.3 or val_acwr < 0.8:
