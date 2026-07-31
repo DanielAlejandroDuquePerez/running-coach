@@ -14,9 +14,57 @@ def make_responsive_chart(fig, height=320, title=""):
         legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
         hovermode="x unified",
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)"
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#FFFFFF", family="Inter, Segoe UI, Arial, sans-serif"),
+        title_font=dict(color="#FFFFFF", size=15),
     )
+    fig.update_xaxes(gridcolor="rgba(255, 255, 255, 0.05)", zerolinecolor="rgba(255, 255, 255, 0.05)", linecolor="rgba(255, 255, 255, 0.08)", tickfont=dict(color="#8A99AD"))
+    fig.update_yaxes(gridcolor="rgba(255, 255, 255, 0.05)", zerolinecolor="rgba(255, 255, 255, 0.05)", linecolor="rgba(255, 255, 255, 0.08)", tickfont=dict(color="#8A99AD"))
     return fig
+
+
+def render_hud_metric(label, value, delta=None, tone="cyan", subtitle=None):
+    tone_styles = {
+        "cyan": ("#00D2FF", "rgba(0, 210, 255, 0.08)"),
+        "lime": ("#00E676", "rgba(0, 230, 118, 0.08)"),
+        "amber": ("#FFB300", "rgba(255, 179, 0, 0.08)"),
+        "red": ("#FF3366", "rgba(255, 51, 102, 0.08)"),
+        "slate": ("#8A99AD", "rgba(138, 153, 173, 0.08)"),
+    }
+    accent, fill = tone_styles.get(tone, tone_styles["cyan"])
+    delta_html = f'<div class="hud-delta">{delta}</div>' if delta else ""
+    subtitle_html = f'<div class="hud-subtitle">{subtitle}</div>' if subtitle else ""
+    st.markdown(
+        f"""
+        <div class="hud-card" style="--hud-accent:{accent}; --hud-fill:{fill};">
+            <div class="hud-accent-bar"></div>
+            <div class="hud-label">{label}</div>
+            <div class="hud-value">{value}</div>
+            {delta_html}
+            {subtitle_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_status_badge(text, tone="success", icon="●"):
+    tone_styles = {
+        "success": ("#00E676", "rgba(0, 230, 118, 0.10)"),
+        "warning": ("#FFB300", "rgba(255, 179, 0, 0.10)"),
+        "danger": ("#FF3366", "rgba(255, 51, 102, 0.10)"),
+        "info": ("#00D2FF", "rgba(0, 210, 255, 0.10)"),
+    }
+    color, bg = tone_styles.get(tone, tone_styles["info"])
+    st.markdown(
+        f"""
+        <div class="hud-badge" style="--hud-badge-color:{color}; --hud-badge-bg:{bg};">
+            <span class="hud-badge-icon">{icon}</span>
+            <span>{text}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -50,8 +98,8 @@ def render_interactive_ecosystem_chart(df):
             x=df_weekly['semana'], 
             y=df_weekly[col_dist], 
             name="Volumen Semanal (Km)",
-            marker_color="#1E88E5",
-            opacity=0.7
+            marker_color="rgba(0, 210, 255, 0.80)",
+            opacity=0.8
         ),
         secondary_y=False
     )
@@ -63,24 +111,18 @@ def render_interactive_ecosystem_chart(df):
             y=df_weekly['acwr'], 
             name="Ratio ACWR",
             mode="lines+markers",
-            line=dict(color="#FFC107", width=3)
+            line=dict(color="#FFD600", width=3)
         ),
         secondary_y=True
     )
 
     # Líneas horizontales de riesgo
-    fig.add_hline(y=1.5, line_dash="dot", line_color="red", secondary_y=True)
-    fig.add_hline(y=0.8, line_dash="dot", line_color="green", secondary_y=True)
+    fig.add_hline(y=1.5, line_dash="dot", line_color="#FF3366", secondary_y=True)
+    fig.add_hline(y=0.8, line_dash="dot", line_color="#00E676", secondary_y=True)
 
-    fig.update_layout(
-        title="<b>Evolución de Carga: Volumen Semanal vs ACWR</b>",
-        height=320,
-        margin=dict(l=10, r=10, t=35, b=20),
-        legend=dict(orientation="h", y=-0.2),
-        hovermode="x unified",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)"
-    )
+    fig = make_responsive_chart(fig, height=320, title="Evolución de Carga: Volumen Semanal vs ACWR")
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(255, 255, 255, 0.05)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(255, 255, 255, 0.05)")
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -187,42 +229,187 @@ if "km_cronicos" not in st.session_state:
 if "prompt_sugerido_ia" not in st.session_state:
     st.session_state["prompt_sugerido_ia"] = ""
 
-# --- INYECCIÓN CSS PARA DISEÑO RESPONSIVO Y TARJETAS PRO ---
-st.markdown("""
+# --- INYECCIÓN CSS GARMIN HUD ---
+st.markdown(
+    """
     <style>
-    /* Reducir espacio superior en dispositivos móviles y escritorio */
-    .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 2rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+    :root {
+        --bg-main: #0B0E14;
+        --bg-panel: #121824;
+        --bg-panel-strong: #0F1520;
+        --border-panel: #1E2A38;
+        --text-primary: #FFFFFF;
+        --text-secondary: #8A99AD;
+        --accent-cyan: #00D2FF;
+        --accent-lime: #00E676;
+        --accent-amber: #FFB300;
+        --accent-red: #FF3366;
+        --grid-soft: rgba(255, 255, 255, 0.05);
     }
-    
-    /* Estilizar las tarjetas de métricas (st.metric) */
-    [data-testid="stMetric"] {
-        background-color: #1e222a;
-        border: 1px solid #2d3139;
-        border-radius: 10px;
-        padding: 12px 16px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Optimizar títulos en pantallas pequeñas */
-    h1 { font-size: 1.8rem !important; }
-    h2 { font-size: 1.4rem !important; }
-    h3 { font-size: 1.1rem !important; }
 
-    /* Ajuste para que las tablas no rompan el layout horizontal */
-    [data-testid="stDataFrame"] {
-        border-radius: 8px;
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], [data-testid="stToolbar"] {
+        background: var(--bg-main) !important;
+        color: var(--text-primary) !important;
+    }
+
+    .block-container {
+        padding-top: 1.1rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 0.9rem !important;
+        padding-right: 0.9rem !important;
+        max-width: 100% !important;
+    }
+
+    h1, h2, h3, h4, h5, h6, p, span, div, label {
+        color: var(--text-primary);
+    }
+
+    h1 { font-size: 1.9rem !important; font-weight: 800 !important; letter-spacing: -0.02em; }
+    h2 { font-size: 1.35rem !important; font-weight: 700 !important; }
+    h3 { font-size: 1.05rem !important; font-weight: 700 !important; }
+
+    [data-testid="stMetric"] {
+        background: linear-gradient(180deg, rgba(18,24,36,0.96) 0%, rgba(15,21,32,0.96) 100%) !important;
+        border: 1px solid var(--border-panel) !important;
+        border-radius: 12px !important;
+        padding: 12px 14px !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: var(--text-secondary) !important;
+        font-size: 0.82rem !important;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: var(--text-primary) !important;
+        font-size: 1.8rem !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.03em;
+    }
+
+    [data-testid="stMetricDelta"] {
+        color: var(--text-secondary) !important;
+        font-size: 0.82rem !important;
+    }
+
+    .hud-card {
+        position: relative;
+        background: linear-gradient(180deg, rgba(18,24,36,0.96) 0%, rgba(15,21,32,0.96) 100%);
+        border: 1px solid var(--border-panel);
+        border-radius: 12px;
+        padding: 1rem 1rem 0.95rem 1.1rem;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
         overflow: hidden;
+        min-height: 110px;
+    }
+
+    .hud-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.02) 100%);
+        pointer-events: none;
+    }
+
+    .hud-accent-bar {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: var(--hud-accent, var(--accent-cyan));
+        box-shadow: 0 0 14px var(--hud-accent, var(--accent-cyan));
+    }
+
+    .hud-label {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.18rem;
+    }
+
+    .hud-value {
+        color: var(--text-primary);
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1.02;
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .hud-delta, .hud-subtitle {
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        margin-top: 0.32rem;
+        line-height: 1.3;
+    }
+
+    .hud-delta {
+        color: var(--hud-accent, var(--accent-cyan));
+        font-weight: 600;
+    }
+
+    .hud-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.45rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid var(--hud-badge-color, var(--accent-cyan));
+        background: var(--hud-badge-bg, rgba(0, 210, 255, 0.10));
+        color: var(--hud-badge-color, var(--accent-cyan));
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        width: fit-content;
+    }
+
+    .hud-badge-icon {
+        font-size: 0.9rem;
+        line-height: 1;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.5rem;
+        background: rgba(18, 24, 36, 0.92);
+        border: 1px solid var(--border-panel);
+        border-radius: 16px;
+        padding: 0.35rem;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 44px;
+        padding: 0.55rem 1rem;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text-secondary) !important;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: var(--text-primary) !important;
+        border-color: rgba(0, 210, 255, 0.55);
+        background: linear-gradient(180deg, rgba(0, 210, 255, 0.16) 0%, rgba(0, 210, 255, 0.08) 100%);
+        box-shadow: inset 0 -2px 0 0 var(--accent-cyan);
+    }
+
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--text-primary) !important;
+        border-color: rgba(0, 230, 118, 0.30);
     }
 
     .stExpander {
-        border: 1px solid #2d3139 !important;
+        border: 1px solid var(--border-panel) !important;
         border-radius: 12px !important;
-        background: rgba(30, 34, 42, 0.75) !important;
+        background: rgba(18, 24, 36, 0.88) !important;
         margin-bottom: 0.8rem;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.20);
     }
 
     [data-testid="stExpanderToggle"] {
@@ -230,53 +417,111 @@ st.markdown("""
     }
 
     [data-testid="stExpanderDetails"] {
-        padding: 0.3rem 0.8rem 0.8rem !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- INYECCIÓN DE CSS PARA DISEÑO MOBILE-FIRST Y TARJETAS PRO ---
-st.markdown("""
-    <style>
-    /* 1. Reducir padding sobrante en bordes para móviles */
-    .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 2rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding: 0.2rem 0.8rem 0.85rem !important;
     }
 
-    /* 2. Tarjetas de métricas modernas con bordes y sombra */
-    [data-testid="stMetric"] {
-        background: #1e222a;
-        border: 1px solid #2d3139;
-        border-radius: 12px;
-        padding: 12px 14px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    }
-    
-    [data-testid="stMetricLabel"] {
-        font-size: 0.85rem !important;
-        color: #a0aab8 !important;
-    }
-
-    [data-testid="stMetricValue"] {
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
-    }
-
-    /* 3. Ajuste de jerarquía tipográfica para pantallas pequeñas */
-    h1 { font-size: 1.6rem !important; font-weight: 700 !important; }
-    h2 { font-size: 1.25rem !important; font-weight: 600 !important; }
-    h3 { font-size: 1.05rem !important; font-weight: 600 !important; }
-
-    /* 4. Tablas con bordes redondeados y scroll horizontal limpio */
     [data-testid="stDataFrame"] {
-        border-radius: 10px;
+        border-radius: 12px;
         overflow: hidden;
+        border: 1px solid var(--border-panel);
+    }
+
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 12px !important;
+        border: 1px solid var(--border-panel) !important;
+        background: linear-gradient(180deg, rgba(18,24,36,0.98), rgba(15,21,32,0.98)) !important;
+        color: var(--text-primary) !important;
+        font-weight: 700 !important;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20);
+    }
+
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        border-color: rgba(0, 210, 255, 0.55) !important;
+        box-shadow: 0 0 0 1px rgba(0, 210, 255, 0.18), 0 12px 24px rgba(0, 0, 0, 0.24);
+    }
+
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(11, 14, 20, 0.98) 0%, rgba(9, 12, 18, 0.98) 100%) !important;
+        border-right: 1px solid rgba(30, 42, 56, 0.9);
+    }
+
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 1.0rem !important;
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+    }
+
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label {
+        color: var(--text-primary) !important;
+    }
+
+    .stSlider [data-baseweb="slider"] {
+        padding-top: 0.35rem;
+        padding-bottom: 0.35rem;
+    }
+
+    .stSelectbox [data-baseweb="select"],
+    .stMultiSelect [data-baseweb="select"],
+    .stDateInput [data-baseweb="base-input"],
+    .stTextInput input,
+    .stTextArea textarea,
+    .stNumberInput input {
+        background: rgba(18, 24, 36, 0.95) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid rgba(30, 42, 56, 0.95) !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
+    }
+
+    .stSelectbox [data-baseweb="select"]:hover,
+    .stMultiSelect [data-baseweb="select"]:hover,
+    .stDateInput [data-baseweb="base-input"]:hover,
+    .stTextInput input:hover,
+    .stTextArea textarea:hover,
+    .stNumberInput input:hover {
+        border-color: rgba(0, 210, 255, 0.35) !important;
+    }
+
+    .stSelectbox [data-baseweb="select"] > div,
+    .stMultiSelect [data-baseweb="select"] > div {
+        background: rgba(18, 24, 36, 0.95) !important;
+        border-radius: 12px !important;
+    }
+
+    .stCheckbox label,
+    .stRadio label,
+    .stSelect_slider label {
+        color: var(--text-secondary) !important;
+    }
+
+    hr {
+        border-color: rgba(30, 42, 56, 0.85) !important;
+    }
+
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: rgba(0, 210, 255, 0.22);
+        border-radius: 999px;
+        border: 2px solid rgba(11, 14, 20, 0.9);
+    }
+
+    ::-webkit-scrollbar-track {
+        background: rgba(11, 14, 20, 0.9);
     }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # 2. Consolidación de importaciones
 from src.metrics import calculate_vdot, calculate_pacing_splits, compute_acwr_ratio, calculate_acwr
@@ -310,35 +555,6 @@ from src.ui import (
     render_vdot_calculator_section,
     render_weekly_metrics,
     render_weekly_checkin,
-)
-
-# 3. Estilos CSS personalizados (Minimalista y profesional)
-st.markdown(
-    """
-    <style>
-    .metric-card {
-        background-color: #1E1E1E;
-        padding: 24px;
-        border-radius: 8px;
-        border: 1px solid #333;
-        text-align: center;
-        box-shadow: 0px 2px 4px rgba(0,0,0,0.2);
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 4px 4px 0px 0px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        font-weight: 600;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
 )
 
 # 4. Carga y procesamiento de datos
@@ -466,7 +682,7 @@ filtered = cleaned_data[
 ]
 
 if filtered.empty:
-    st.warning("No hay datos registrados en el rango de fechas seleccionado.")
+    render_status_badge("No hay datos registrados en el rango de fechas seleccionado.", tone="warning", icon="!")
     st.stop()
 
 # Cálculos globales
@@ -518,15 +734,20 @@ with tab_hoy:
     # 1. Tarjeta de Readiness
     readiness_col, readiness_note = st.columns([1.1, 1.4])
     with readiness_col:
-        st.metric("Readiness de Hoy", f"{int(readiness_score)} / 100")
+        render_hud_metric(
+            "Readiness de Hoy",
+            f"{int(readiness_score)}<span style='font-size:1rem;color:#8A99AD'> / 100</span>",
+            subtitle="Predisposición diaria al entrenamiento",
+            tone="lime" if readiness_badge == "success" else "amber" if readiness_badge == "warning" else "red",
+        )
         st.progress(readiness_score / 100)
     with readiness_note:
         if readiness_badge == "success":
-            st.success(f"🟢 {readiness_state}")
+            render_status_badge(readiness_state, tone="success", icon="●")
         elif readiness_badge == "warning":
-            st.warning(f"🟡 {readiness_state}")
+            render_status_badge(readiness_state, tone="warning", icon="●")
         else:
-            st.error(f"🔴 {readiness_state}")
+            render_status_badge(readiness_state, tone="danger", icon="●")
         st.caption(
             f"Calculado con ACWR {today_acwr.get('acwr', 0.0):.2f}, RPE {rpe_promedio:.0f} y {dias_descanso_recientes} día(s) de recuperación reciente."
         )
@@ -535,9 +756,27 @@ with tab_hoy:
 
     # 2. Métricas clave
     metric_cols = st.columns(3)
-    metric_cols[0].metric("ACWR", f"{today_acwr.get('acwr', 0.0):.2f}")
-    metric_cols[1].metric("Carga Aguda", f"{today_acwr.get('carga_aguda', 0.0):.1f} km")
-    metric_cols[2].metric("Carga Crónica", f"{today_acwr.get('carga_cronica', 0.0):.1f} km")
+    with metric_cols[0]:
+        render_hud_metric(
+            "ACWR",
+            f"{today_acwr.get('acwr', 0.0):.2f}",
+            delta="Zona dulce 0.80 - 1.30",
+            tone="cyan",
+        )
+    with metric_cols[1]:
+        render_hud_metric(
+            "Carga Aguda",
+            f"{today_acwr.get('carga_aguda', 0.0):.1f} km",
+            delta="Últimos 7 días",
+            tone="amber",
+        )
+    with metric_cols[2]:
+        render_hud_metric(
+            "Carga Crónica",
+            f"{today_acwr.get('carga_cronica', 0.0):.1f} km",
+            delta="Promedio de 4 semanas",
+            tone="slate",
+        )
 
     # 3. Gráfico Interactivo Combinado
     st.markdown("### 📈 Volumen vs ACWR")
@@ -546,9 +785,9 @@ with tab_hoy:
     # 4. Alerta inteligente con CTA al Coach IA
     if today_acwr.get("status") in {"caution", "danger"}:
         if today_acwr["status"] == "danger":
-            st.error(today_acwr["message"])
+            render_status_badge(today_acwr["message"], tone="danger", icon="⚠")
         else:
-            st.warning(today_acwr["message"])
+            render_status_badge(today_acwr["message"], tone="warning", icon="⚠")
 
         prompt_auto = (
             f"Hola Coach, hoy tengo un ACWR de {today_acwr.get('acwr', 0.0):.2f}, "
@@ -558,9 +797,9 @@ with tab_hoy:
 
         if st.button("🤖 Enviar alerta al Coach IA", type="primary", use_container_width=True):
             st.session_state["prompt_sugerido_ia"] = prompt_auto
-            st.info("La consulta quedó lista en la pestaña Coach IA.")
+            render_status_badge("La consulta quedó lista en la pestaña Coach IA.", tone="info", icon="↗")
     else:
-        st.success(today_acwr["message"])
+        render_status_badge(today_acwr["message"], tone="success", icon="✓")
 
 # --- PESTAÑA 2: RITMOS Y MARCAS ---
 with tab_ritmos:
@@ -586,18 +825,13 @@ with tab_ritmos:
     # 2. Tarjetas de Race Predictor (5K, 10K, 15K, 21K)
     predictions = calculate_race_predictions(dist_base, tiempo_base)
     if not predictions:
-        st.info("Ingresa una marca de referencia válida para activar el predictor de competencia.")
+        render_status_badge("Ingresa una marca de referencia válida para activar el predictor de competencia.", tone="info", icon="i")
     else:
         st.markdown("### 🏁 Race Predictor")
         pred_cols = st.columns(4)
         for idx, (label, info) in enumerate(predictions.items()):
             with pred_cols[idx]:
-                st.metric(
-                    label=label,
-                    value=info["tiempo"],
-                    delta=f"Ritmo: {info['ritmo']}",
-                    delta_color="normal",
-                )
+                render_hud_metric(label, info["tiempo"], delta=f"Ritmo: {info['ritmo']}", tone="cyan")
 
     st.markdown("---")
 
@@ -606,7 +840,7 @@ with tab_ritmos:
     vdot_calc, vdot_ref = get_vdot_from_df(filtered)
 
     if not vdot_calc:
-        st.info("No fue posible calcular un VDOT de referencia con los datos filtrados.")
+        render_status_badge("No fue posible calcular un VDOT de referencia con los datos filtrados.", tone="warning", icon="!")
     else:
         if vdot_ref:
             st.caption(
@@ -628,11 +862,14 @@ with tab_ritmos:
 
             with st.expander(f"{zone_code} - {zone_name}", expanded=False):
                 if zone_row.empty:
-                    st.info("No se encontró información para esta zona.")
+                    render_status_badge("No se encontró información para esta zona.", tone="info", icon="i")
                 else:
                     row = zone_row.iloc[0]
-                    st.metric("Rango de Ritmo", row["Rango de Ritmo (min/km)"])
-                    st.markdown(f"**Propósito fisiológico:** {row['Propósito Fisiológico']}")
+                    zone_cols = st.columns([1, 1.35])
+                    with zone_cols[0]:
+                        render_hud_metric("Rango de Ritmo", row["Rango de Ritmo (min/km)"], tone="lime")
+                    with zone_cols[1]:
+                        render_status_badge(row["Propósito Fisiológico"], tone="info", icon="○")
 
 # FUNCIÓN AUXILIAR DE PROCESAMIENTO DE ARCHIVOS CSV / EXCEL
     # ------------------------------------------------------------------
@@ -697,9 +934,13 @@ with tab_ritmos:
         if uploaded_file is not None:
             resumen_file, err_file = process_uploaded_activities(uploaded_file)
             if err_file:
-                st.error(f"❌ {err_file}")
+                render_status_badge(err_file, tone="danger", icon="⚠")
             else:
-                st.success(f"✅ Historial cargado. Última actividad: **{resumen_file['fecha_reciente']}** ({resumen_file['total_sesiones']} registros).")
+                render_status_badge(
+                    f"Historial cargado. Última actividad: {resumen_file['fecha_reciente']} ({resumen_file['total_sesiones']} registros).",
+                    tone="success",
+                    icon="✓",
+                )
                 km_agudos_val = resumen_file["km_agudos"]
                 km_cronicos_val = resumen_file["km_cronicos"]
                 
@@ -707,8 +948,10 @@ with tab_ritmos:
                 st.session_state["df_actividades"] = resumen_file["df"]
 
                 col_c1, col_c2 = st.columns(2)
-                col_c1.metric("Carga Aguda Detectada (7 días)", f"{km_agudos_val} km")
-                col_c2.metric("Carga Crónica Detectada (28d prom.)", f"{km_cronicos_val} km/sem")
+                with col_c1:
+                    render_hud_metric("Carga Aguda Detectada", f"{km_agudos_val} km", subtitle="Últimos 7 días", tone="amber")
+                with col_c2:
+                    render_hud_metric("Carga Crónica Detectada", f"{km_cronicos_val} km/sem", subtitle="Promedio 28 días", tone="cyan")
 
     # 👈 MOSTRAR EL GRÁFICO COMBINADO SI HAY DATOS CARGADOS
     if st.session_state.get("df_actividades") is not None:
@@ -729,16 +972,16 @@ with tab_ritmos:
 
     col_m1, col_m2 = st.columns([1, 2])
     with col_m1:
-        st.metric("Ratio ACWR Actual", f"{val_acwr:.2f}")
+        render_hud_metric("Ratio ACWR Actual", f"{val_acwr:.2f}", tone="cyan")
     with col_m2:
         if tipo_alerta == "success":
-            st.success(f"**{estado_acwr}**\n\n{desc_acwr}")
+            render_status_badge(f"{estado_acwr} · {desc_acwr}", tone="success", icon="✓")
         elif tipo_alerta == "warning":
-            st.warning(f"**{estado_acwr}**\n\n{desc_acwr}")
+            render_status_badge(f"{estado_acwr} · {desc_acwr}", tone="warning", icon="⚠")
         elif tipo_alerta == "error":
-            st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
+            render_status_badge(f"{estado_acwr} · {desc_acwr}", tone="danger", icon="⚠")
         else:
-            st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
+            render_status_badge(f"{estado_acwr} · {desc_acwr}", tone="info", icon="i")
 
 
 # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
@@ -750,7 +993,7 @@ with tab_ritmos:
         )
         if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
             st.session_state["prompt_sugerido_ia"] = prompt_auto
-            st.info("👉 Se ha guardado la consulta. Ve a la pestaña **'Coach IA'** para enviarla.")
+            render_status_badge("Consulta guardada. Ve a la pestaña Coach IA para enviarla.", tone="info", icon="↗")
             
 with tab_ai:
     st.subheader("🤖 Planificación Semanal con Inteligencia Artificial")
@@ -758,10 +1001,18 @@ with tab_ai:
 
 #  MOSTRAR CONSULTA SUGERIDA DESDE ACWR SI EXISTE
     if st.session_state.get("prompt_sugerido_ia"):
-        st.info(f"💡 **Consulta pendiente desde el módulo de ACWR:**\n\n_{st.session_state['prompt_sugerido_ia']}_")
-        if st.button("🧹 Limpiar sugerencia"):
+        render_status_badge(f"Consulta pendiente: {st.session_state['prompt_sugerido_ia']}", tone="info", icon="i")
+        if st.button("🧹 Limpiar sugerencia", key="btn_limpiar_sugerencia_legacy"):
             st.session_state["prompt_sugerido_ia"] = ""
             st.rerun()
+
+    if st.session_state.get("current_ai_plan"):
+        plan_words = len(st.session_state["current_ai_plan"].split())
+        ai_summary_cols = st.columns(2)
+        with ai_summary_cols[0]:
+            render_hud_metric("Plan Activo", f"{plan_words} palabras", subtitle="Contenido generado por IA", tone="lime")
+        with ai_summary_cols[1]:
+            render_status_badge("Plan disponible para descarga o guardado", tone="success", icon="✓")
 
     # 1. Botón para desencadenar la generación
     if st.button("⚡ Generar Plan Semanal con IA", type="primary"):
@@ -826,7 +1077,7 @@ with tab_ai:
                     feedback_atleta=st.session_state.get("feedback_data", {})
                 )
                 
-                st.success(f"✅ Plan guardado exitosamente (ID: `{saved_record['id']}`). ¡Ya puedes darle seguimiento!")
+                render_status_badge(f"Plan guardado exitosamente (ID: {saved_record['id']}).", tone="success", icon="✓")
 
         # Mostrar el plan generado en pantalla
         st.markdown(st.session_state["current_ai_plan"])
@@ -875,17 +1126,17 @@ with tab_analitica:
     if uploaded_file is not None:
         uploaded_df, upload_error = process_uploaded_activities(uploaded_file)
         if upload_error:
-            st.error(upload_error)
+            render_status_badge(upload_error, tone="danger", icon="⚠")
         else:
             st.session_state["df_actividades"] = uploaded_df
-            st.success(f"Historial cargado: {len(uploaded_df)} registros procesados.")
+            render_status_badge(f"Historial cargado: {len(uploaded_df)} registros procesados.", tone="success", icon="✓")
 
     df_actividades = st.session_state.get("df_actividades")
     if df_actividades is not None and not df_actividades.empty:
         st.markdown("### Actividades procesadas")
         st.dataframe(df_actividades, use_container_width=True, hide_index=True)
     else:
-        st.info("Carga un archivo para ver aquí tu historial procesado.")
+        render_status_badge("Carga un archivo para ver aquí tu historial procesado.", tone="info", icon="i")
 
     st.markdown("---")
     st.subheader("⚙️ Ajuste manual de kilometraje")
@@ -916,16 +1167,16 @@ with tab_analitica:
 
     metric_manual_1, metric_manual_2 = st.columns(2)
     with metric_manual_1:
-        st.metric("ACWR Manual", f"{acwr_manual:.2f}")
+        render_hud_metric("ACWR Manual", f"{acwr_manual:.2f}", tone="cyan")
     with metric_manual_2:
         if tipo_alerta_manual == "success":
-            st.success(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="success", icon="✓")
         elif tipo_alerta_manual == "warning":
-            st.warning(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="warning", icon="⚠")
         elif tipo_alerta_manual == "error":
-            st.error(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="danger", icon="⚠")
         else:
-            st.info(f"**{estado_acwr_manual}**\n\n{desc_acwr_manual}")
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="info", icon="i")
 
 with tab_ai:
     st.subheader("🤖 Coach IA — Planificación Personalizada")
@@ -933,12 +1184,18 @@ with tab_ai:
 
     # 1. Lectura del prompt_sugerido_ia (Si proviene de una alerta de ACWR/Readiness)
     if st.session_state.get("prompt_sugerido_ia"):
-        st.info(
-            f"💡 **Consulta pendiente desde otro módulo:**\n\n_{st.session_state['prompt_sugerido_ia']}_"
-        )
+        render_status_badge(f"Consulta pendiente: {st.session_state['prompt_sugerido_ia']}", tone="info", icon="i")
         if st.button("🧹 Limpiar sugerencia", key="btn_limpiar_sugerencia_ia"):
             st.session_state["prompt_sugerido_ia"] = ""
             st.rerun()
+
+    if st.session_state.get("current_ai_plan"):
+        plan_words = len(st.session_state["current_ai_plan"].split())
+        ai_summary_cols = st.columns(2)
+        with ai_summary_cols[0]:
+            render_hud_metric("Plan Activo", f"{plan_words} palabras", subtitle="Contenido generado por IA", tone="lime")
+        with ai_summary_cols[1]:
+            render_status_badge("Plan disponible para descarga o guardado", tone="success", icon="✓")
 
     # 2. Formulario de sensaciones del usuario
     st.markdown("### 📝 Formulario de sensaciones")
@@ -1049,7 +1306,7 @@ with tab_ai:
                     plan_markdown=st.session_state["current_ai_plan"],
                     feedback_atleta=st.session_state.get("feedback_data", {}),
                 )
-                st.success(f"✅ Plan guardado exitosamente (ID: `{saved_record['id']}`).")
+                render_status_badge(f"Plan guardado exitosamente (ID: {saved_record['id']}).", tone="success", icon="✓")
 
         st.markdown(st.session_state["current_ai_plan"])
 
@@ -1061,7 +1318,7 @@ with tab_seguimiento:
     saved_plans = load_all_plans()
 
     if not saved_plans:
-        st.info("ℹ️ Aún no has guardado ningún plan. Genera uno en la pestaña 'Coach Virtual IA' y presiona '💾 Guardar Plan'.")
+        render_status_badge("Aún no has guardado ningún plan. Genera uno en Coach IA y guárdalo.", tone="info", icon="i")
     else:
         # 📊 1. GRÁFICA DE HISTORIAL DE ADHERENCIA
         hist_data = []
@@ -1087,13 +1344,12 @@ with tab_seguimiento:
                 range_y=[0, 105]
             )
             fig_adh.update_traces(texttemplate='%{text}%', textposition='outside')
-            fig_adh.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
+            fig_adh = make_responsive_chart(fig_adh, height=280, title="Evolución Histórica de Adherencia Semanal")
             st.markdown("---")
 
         with st.expander("📊 Ver historial de adherencia", expanded=False):
             fig_adh.update_xaxes(type='category')
             fig_adh.update_traces(texttemplate='%{text}%', textposition='outside')
-            fig_adh.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
             st.plotly_chart(fig_adh, use_container_width=True)
 
         # 📋 2. SELECTOR DE PLAN GUARDADO
@@ -1135,9 +1391,12 @@ with tab_seguimiento:
         st.markdown("### 🎯 Métricas Semanales de Cumplimiento")
 
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        col_m1.metric("Sesiones Cumplidas", f"{dias_completados} / 7 días")
-        col_m2.metric("Volumen Real Acumulado", f"{km_totales_reales:.1f} km")
-        col_m3.metric("Adherencia Automática", f"{adherencia_calculada}%")
+        with col_m1:
+            render_hud_metric("Sesiones Cumplidas", f"{dias_completados} / 7 días", tone="lime")
+        with col_m2:
+            render_hud_metric("Volumen Real Acumulado", f"{km_totales_reales:.1f} km", tone="cyan")
+        with col_m3:
+            render_hud_metric("Adherencia Automática", f"{adherencia_calculada}%", tone="amber")
         
         # Estado manual y notas globales
         with col_m4:
@@ -1158,7 +1417,7 @@ with tab_seguimiento:
             diario_actualizado = edited_df.to_dict(orient="records")
             
             if update_full_plan(selected_id, nuevo_estado, adherencia_calculada, notas_globales, diario_actualizado):
-                st.success("✅ Diario y métricas de adherencia guardados con éxito en la base de datos local.")
+                render_status_badge("Diario y métricas de adherencia guardados con éxito.", tone="success", icon="✓")
                 st.rerun()
 
         st.markdown("---")
