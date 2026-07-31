@@ -84,7 +84,52 @@ def render_interactive_ecosystem_chart(df):
 
     st.plotly_chart(fig, use_container_width=True)
 
-    
+# --- FUNCIÓN PARA CALCULAR PREDISPOSICIÓN AL ENTRENAMIENTO (GARMIN STYLE) ---
+def calculate_training_readiness(acwr, rpe_promedio, dias_descanso_recientes=1):
+    """
+    Calcula un score de 0 a 100% de Predisposición al Entrenamiento
+    inspirado en Garmin Training Readiness.
+    """
+    # 1. Puntuación por ACWR (Zona dulce 0.8 - 1.3)
+    if 0.8 <= acwr <= 1.3:
+        score_acwr = 100
+    elif 1.3 < acwr <= 1.5:
+        score_acwr = 70
+    elif acwr > 1.5:
+        score_acwr = 30
+    else:  # < 0.8 (Subentrenamiento)
+        score_acwr = 85
+
+    # 2. Puntuación por RPE / Fatiga percibida (Escala 1 - 10)
+    if rpe_promedio <= 4:
+        score_rpe = 100
+    elif rpe_promedio <= 6:
+        score_rpe = 80
+    elif rpe_promedio <= 8:
+        score_rpe = 50
+    else:
+        score_rpe = 20
+
+    # 3. Puntuación por Días de Recuperación
+    score_rest = min(100, 50 + (dias_descanso_recientes * 25))
+
+    # Ponderación total
+    readiness = (score_acwr * 0.40) + (score_rpe * 0.40) + (score_rest * 0.20)
+    readiness_val = round(max(0, min(100, readiness)), 0)
+
+    # Categorización visual estilo Garmin
+    if readiness_val >= 80:
+        estado = "Alto (¡Listo para entrenar fuerte!)"
+        color_badge = "success"
+    elif readiness_val >= 50:
+        estado = "Moderado (Entrenamiento controlado)"
+        color_badge = "warning"
+    else:
+        estado = "Bajo (Priorizar recuperación / Regenerativo)"
+        color_badge = "error"
+
+    return readiness_val, estado, color_badge
+
 # 1. Configuración de la página (Debe ser la primera instrucción)
 st.set_page_config(
     page_title="Performance Dashboard",
@@ -682,7 +727,34 @@ with tab_planning:
             st.error(f"**{estado_acwr}**\n\n{desc_acwr}")
         else:
             st.info(f"**{estado_acwr}**\n\n{desc_acwr}")
+# ------------------------------------------------------------------
+    # TARJETA TIPO GARMIN: PREDISPOSICIÓN AL ENTRENAMIENTO (READINESS)
+    # ------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("⌚ Nivel de Predisposición al Entrenamiento (Training Readiness)")
+    st.caption("Indicador holístico de preparación diaria basado en tu balance de carga y fatiga.")
 
+    # Calcular score con los valores actuales del estado
+    readiness_score, estado_readiness, tipo_badge = calculate_training_readiness(
+        acwr=val_acwr, 
+        rpe_promedio=6.0,  # O el promedio extraído del archivo
+        dias_descanso_recientes=1
+    )
+
+    col_r1, col_r2 = st.columns([1, 2])
+    with col_r1:
+        st.metric("Predisposición Hoy", f"{int(readiness_score)} / 100")
+    with col_r2:
+        if tipo_badge == "success":
+            st.success(f"🟢 **{estado_readiness}**")
+        elif tipo_badge == "warning":
+            st.warning(f"🟡 **{estado_readiness}**")
+        else:
+            st.error(f"🔴 **{estado_readiness}**")
+
+    # Progreso visual
+    st.progress(readiness_score / 100.0)
+    
 # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
     if val_acwr > 1.3 or val_acwr < 0.8:
         prompt_auto = (
