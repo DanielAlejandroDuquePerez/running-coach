@@ -130,6 +130,46 @@ def calculate_training_readiness(acwr, rpe_promedio, dias_descanso_recientes=1):
 
     return readiness_val, estado, color_badge
 
+# --- FUNCIÓN PARA CARGAR DATOS DE ACTIVIDADES ---
+def calculate_race_predictions(base_distance_km, base_time_min):
+    """
+    Calcula predicciones de tiempo para 5K, 10K, 15K y 21K usando la Fórmula de Riegel.
+    """
+    if base_distance_km <= 0 or base_time_min <= 0:
+        return {}
+
+    target_distances = {
+        "5K": 5.0,
+        "10K": 10.0,
+        "15K": 15.0,
+        "Media Maratón (21K)": 21.0975
+    }
+
+    predictions = {}
+    for name, d2 in target_distances.items():
+        # Formula Riegel: T2 = T1 * (D2 / D1)^1.06
+        t2_min = base_time_min * ((d2 / base_distance_km) ** 1.06)
+        
+        # Calcular ritmo medio (min/km)
+        pace_min_km = t2_min / d2
+        pace_minutes = int(pace_min_km)
+        pace_seconds = int((pace_min_km - pace_minutes) * 60)
+        
+        # Formatear tiempo total HH:MM:SS o MM:SS
+        hours = int(t2_min // 60)
+        mins = int(t2_min % 60)
+        secs = int((t2_min - int(t2_min)) * 60)
+        
+        time_str = f"{hours:02d}:{mins:02d}:{secs:02d}" if hours > 0 else f"{mins:02d}:{secs:02d}"
+        pace_str = f"{pace_minutes}:{pace_seconds:02d} min/km"
+        
+        predictions[name] = {
+            "tiempo": time_str,
+            "ritmo": pace_str
+        }
+
+    return predictions
+
 # 1. Configuración de la página (Debe ser la primera instrucción)
 st.set_page_config(
     page_title="Performance Dashboard",
@@ -754,7 +794,34 @@ with tab_planning:
 
     # Progreso visual
     st.progress(readiness_score / 100.0)
-    
+
+# ------------------------------------------------------------------
+    # PREDICTOR DE MARCAS DE COMPETENCIA (GARMIN RACE PREDICTOR)
+    # ------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🏁 Predictor de Tiempos de Competencia")
+    st.caption("Proyección de marcas potenciales según tu rendimiento reciente (Fórmula de Riegel).")
+
+    # Tomar de base una marca de referencia (ej. un 10K reciente o un test de 5K)
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        dist_base = st.number_input("Distancia de referencia reciente (km):", min_value=1.0, max_value=50.0, value=10.0, step=0.5)
+    with col_p2:
+        tiempo_base = st.number_input("Tiempo registrado (minutos):", min_value=5.0, max_value=300.0, value=48.0, step=0.5)
+
+    predicciones = calculate_race_predictions(dist_base, tiempo_base)
+
+    if predicciones:
+        cols = st.columns(4)
+        for idx, (dist_name, info) in enumerate(predicciones.items()):
+            with cols[idx]:
+                st.metric(
+                    label=f"🎯 {dist_name}",
+                    value=info["tiempo"],
+                    delta=f"Ritmo: {info['ritmo']}",
+                    delta_color="off"
+                )
+
 # 2. Si el ACWR está fuera de la zona dulce, sugerir consulta automática a la IA
     if val_acwr > 1.3 or val_acwr < 0.8:
         prompt_auto = (
