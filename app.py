@@ -2,7 +2,11 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.graph_objects as go
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
+from plotly.subplots import make_subplots
 from plotly.subplots import make_subplots
 
 def make_responsive_chart(fig, height=320, title=""):
@@ -66,8 +70,263 @@ def render_status_badge(text, tone="success", icon="●"):
         unsafe_allow_html=True,
     )
 
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+def create_hero_chart(df_weekly):
+    """
+    Genera el Gráfico Estrella (Hero Chart) combinando:
+    - Volumen Semanal en Km (Barras Azul Cian)
+    - Evolución de Ratio ACWR (Línea Amarillo Neón)
+    - Zona Óptima de Carga (Franja Sombreada Verde Lima: 0.80 - 1.30)
+    Estética: Garmin Tactical Dark HUD.
+    """
+    # Crear gráfico con doble eje Y
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # 1. BARRAS DE VOLUMEN SEMANAL (Eje Y Izquierdo)
+    fig.add_trace(
+        go.Bar(
+            x=df_weekly['semana'],
+            y=df_weekly['volumen_km'],
+            name="Volumen (km)",
+            marker_color="rgba(0, 210, 255, 0.75)",  # Cian Garmin
+            marker_line_color="#00D2FF",
+            marker_line_width=1.5,
+            hovertemplate="<b>Semana:</b> %{x}<br><b>Volumen:</b> %{y:.1f} km<extra></extra>"
+        ),
+        secondary_y=False
+    )
+
+# --- CÁLCULO DE PUNTOS DANIELS ---
+def calculate_daniels_points_row(row):
+    """
+    Calcula los Puntos Daniels de una actividad.
+    Si existen las columnas por zona (min_e, min_m, min_t, min_i, min_r), usa la fórmula exacta.
+    Si no, aplica el fallback basado en RPE y duración.
+    """
+    # Factores estándar por minuto
+    factors = {'E': 0.20, 'M': 0.35, 'T': 0.60, 'I': 0.90, 'R': 1.30}
+    
+    # 1. Método Exacto: Desglose por Zonas
+    if all(col in row for col in ['min_e', 'min_m', 'min_t', 'min_i', 'min_r']):
+        pts_e = row.get('min_e', 0) * factors['E']
+        pts_m = row.get('min_m', 0) * factors['M']
+        pts_t = row.get('min_t', 0) * factors['T']
+        pts_i = row.get('min_i', 0) * factors['I']
+        pts_r = row.get('min_r', 0) * factors['R']
+        return pd.Series([pts_e, pts_m, pts_t, pts_i, pts_r], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+    
+    # 2. Método Estimado (Fallback): Duración + RPE
+    duration_min = row.get('duracion_min', row.get('distancia_km', 0) * 5.5) # Est. 5.5 min/km si falta tiempo
+    rpe = row.get('rpe', 4.0)
+    
+    # Asignación estimada de la sesión completa a una zona según el RPE
+    total_pts = duration_min * ((rpe / 10.0) ** 1.6) * 1.1
+    
+    if rpe <= 3:
+        return pd.Series([total_pts, 0, 0, 0, 0], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+    elif rpe <= 5:
+        return pd.Series([0, total_pts, 0, 0, 0], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+    elif rpe <= 7:
+        return pd.Series([0, 0, total_pts, 0, 0], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+    elif rpe <= 8:
+        return pd.Series([0, 0, 0, total_pts, 0], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+    else:
+        return pd.Series([0, 0, 0, 0, total_pts], index=['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r'])
+
+
+def build_daniels_weekly_summary(df):
+    """
+    Convierte un historial de actividades en una tabla semanal con puntos Daniels.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    source = df.copy()
+    source.columns = [str(col).strip().lower() for col in source.columns]
+
+    fecha_col = next((col for col in source.columns if 'fecha' in col or 'date' in col), None)
+    dist_col = next((col for col in source.columns if 'distancia' in col or 'km' in col or 'distance' in col), None)
+    time_col = next((col for col in source.columns if 'tiempo en movimiento' in col or 'moving time' in col or 'duracion' in col or 'duration' in col), None)
+    rpe_col = next((col for col in source.columns if 'rpe' in col), None)
+
+    if not fecha_col or not dist_col:
+        return pd.DataFrame()
+
+    source[fecha_col] = pd.to_datetime(source[fecha_col], errors='coerce')
+    source[dist_col] = pd.to_numeric(source[dist_col], errors='coerce').fillna(0)
+    source = source.dropna(subset=[fecha_col]).copy()
+
+    if source.empty:
+        return pd.DataFrame()
+
+    source = source.rename(columns={fecha_col: 'fecha', dist_col: 'distancia_km'})
+
+    if time_col and time_col != 'duracion_min':
+        source[time_col] = pd.to_numeric(source[time_col], errors='coerce')
+        source['duracion_min'] = source[time_col] / 60.0
+    elif 'duracion_min' not in source.columns:
+        source['duracion_min'] = source['distancia_km'] * 5.5
+
+    if rpe_col and rpe_col != 'rpe':
+        source['rpe'] = pd.to_numeric(source[rpe_col], errors='coerce').fillna(4.0)
+    elif 'rpe' not in source.columns:
+        source['rpe'] = 4.0
+
+    source['semana'] = source['fecha'].dt.to_period('W').dt.start_time
+
+    pts_df = source.apply(calculate_daniels_points_row, axis=1)
+    source = pd.concat([source, pts_df], axis=1)
+
+    weekly = (
+        source.groupby('semana', as_index=False)[['distancia_km', 'pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r']]
+        .sum()
+        .sort_values('semana')
+    )
+
+    return weekly
+
+# --- GRÁFICO DE BARRAS APILADAS (CARGA INTERNA - DANIELS) ---
+def create_internal_load_chart(df_semanal_pts):
+    """
+    Genera el gráfico de barras apiladas de Puntos de Estrés Semanales.
+    """
+    fig = go.Figure()
+
+    # Mapeo de Zonas, Colores y Nombres
+    zones = [
+        ('pts_e', 'Zona E (Fácil)', '#00E676'),
+        ('pts_m', 'Zona M (Maratón)', '#00D2FF'),
+        ('pts_t', 'Zona T (Umbral)', '#FFB300'),
+        ('pts_i', 'Zona I (Intervalos)', '#FF6D00'),
+        ('pts_r', 'Zona R (Repeticiones)', '#FF3366'),
+    ]
+
+    for col, name, color in zones:
+        if col in df_semanal_pts.columns:
+            fig.add_trace(
+                go.Bar(
+                    x=df_semanal_pts['semana'],
+                    y=df_semanal_pts[col],
+                    name=name,
+                    marker_color=color,
+                    hovertemplate="<b>%{x}</b><br>" + name + ": <b>%{y:.1f} pts</b><extra></extra>"
+                )
+            )
+
+    # Estilización Garmin HUD
+    fig.update_layout(
+        barmode='stack',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=350,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.03,
+            xanchor="right",
+            x=1,
+            font=dict(color="#8A99AD", size=11)
+        ),
+        hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="#121824",
+            font_size=12,
+            font_color="#FFFFFF",
+            bordercolor="#1E2A38"
+        )
+    )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(255, 255, 255, 0.05)",
+        tickfont=dict(color="#8A99AD")
+    )
+
+    fig.update_yaxes(
+        title_text="Puntos de Estrés (Daniels)",
+        title_font=dict(color="#8A99AD", size=11),
+        tickfont=dict(color="#8A99AD"),
+        showgrid=True,
+        gridcolor="rgba(255, 255, 255, 0.05)"
+    )
+
+    return fig
+    # 2. LÍNEA DE TENDENCIA ACWR (Eje Y Derecho)
+    fig.add_trace(
+        go.Scatter(
+            x=df_weekly['semana'],
+            y=df_weekly['acwr'],
+            name="Ratio ACWR",
+            mode="lines+markers",
+            line=dict(color="#FFD600", width=3),  # Amarillo Neón
+            marker=dict(size=7, color="#FFD600", symbol="circle"),
+            hovertemplate="<b>ACWR:</b> %{y:.2f}<extra></extra>"
+        ),
+        secondary_y=True
+    )
+
+    # 3. FRANJA SOMBREADA "SWEET SPOT" (Zona Óptima 0.80 - 1.30)
+    fig.add_hrect(
+        y0=0.80, y1=1.30,
+        fillcolor="rgba(0, 230, 118, 0.12)",  # Verde Lima translúcido
+        layer="below",
+        line_width=0,
+        secondary_y=True,
+        annotation_text="Zona Óptima (0.80 - 1.30)",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color="#00E676", weight="bold")
+    )
+
+    # 4. ESTILIZACIÓN COMPLETA GARMIN HUD DARK
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=340,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.03,
+            xanchor="right",
+            x=1,
+            font=dict(color="#8A99AD", size=12)
+        ),
+        hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="#121824",
+            font_size=12,
+            font_color="#FFFFFF",
+            bordercolor="#1E2A38"
+        )
+    )
+
+    # Configuración de Ejes
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(255, 255, 255, 0.05)",
+        tickfont=dict(color="#8A99AD")
+    )
+
+    fig.update_yaxes(
+        title_text="Volumen (km)",
+        title_font=dict(color="#00D2FF", size=11),
+        tickfont=dict(color="#8A99AD"),
+        showgrid=True,
+        gridcolor="rgba(255, 255, 255, 0.05)",
+        secondary_y=False
+    )
+
+    fig.update_yaxes(
+        title_text="Ratio ACWR",
+        title_font=dict(color="#FFD600", size=11),
+        tickfont=dict(color="#8A99AD"),
+        showgrid=False,
+        range=[0.4, 1.8],  # Rango optimizado para la curva del ACWR
+        secondary_y=True
+    )
+
+    return fig
+
 
 # --- FUNCIÓN PARA EL GRÁFICO COMBINADO VOLUMEN vs ACWR ---
 def render_interactive_ecosystem_chart(df):
@@ -788,6 +1047,23 @@ with tab_hoy:
             tone="slate",
         )
 
+# --- RENDERIZADO DE CARGA INTERNA DANIELS ---
+if st.session_state.get('df_semanal') is not None:
+    # 1. Asegurar el cálculo de puntos si la tabla semanal no los tiene
+    df_sem = st.session_state['df_semanal'].copy()
+    
+    # Verificar si existen columnas de puntos; si no, calcularlas al vuelo
+    required_pts = ['pts_e', 'pts_m', 'pts_t', 'pts_i', 'pts_r']
+    if not all(col in df_sem.columns for col in required_pts):
+        pts_df = df_sem.apply(calculate_daniels_points_row, axis=1)
+        df_sem = pd.concat([df_sem, pts_df], axis=1)
+
+    with st.expander("🔥 Ver Carga Interna: Puntos de Estrés Daniels (Por Intensidad)", expanded=True):
+        st.subheader("Distribución de Estrés Fisiológico Semanal")
+        st.caption("Evolución del esfuerzo real en Puntos Daniels según la intensidad de las zonas recorridas.")
+        
+        fig_internal = create_internal_load_chart(df_sem)
+        st.plotly_chart(fig_internal, use_container_width=True, config={'displayModeBar': False})
     # 3. Gráfico Interactivo Combinado
     st.markdown("### 📈 Volumen vs ACWR")
     render_interactive_ecosystem_chart(filtered)
@@ -844,7 +1120,11 @@ with tab_ritmos:
                 render_hud_metric(label, info["tiempo"], delta=f"Ritmo: {info['ritmo']}", tone="cyan")
 
     st.markdown("---")
-
+# --- GENERACIÓN AUTOMÁTICA DE DF_SEMANAL (AUTOCURACIÓN) ---
+if "df_actividades" in st.session_state and st.session_state["df_actividades"] is not None:
+    if "df_semanal" not in st.session_state or st.session_state["df_semanal"] is None or st.session_state["df_semanal"].empty:
+        st.session_state["df_semanal"] = build_daniels_weekly_summary(st.session_state["df_actividades"])
+        
     # 3. Acordeones con zonas fisiológicas Z2 a Z5
     st.subheader("🧬 Zonas Fisiológicas de Entrenamiento")
     vdot_calc, vdot_ref = get_vdot_from_df(filtered)
@@ -933,42 +1213,74 @@ with tab_ritmos:
     km_agudos_val = 40.0
     km_cronicos_val = 35.0
 
-    # Expander 1: Carga de Archivos Automática
+    # 1. Expander: Carga de Archivos Automática
     with st.expander("📁 Cargar Historial desde Archivo (CSV / Excel)", expanded=False):
         uploaded_file = st.file_uploader(
             "Selecciona tu archivo de entrenamiento (.csv o .xlsx)", 
             type=["csv", "xlsx"],
             help="El archivo debe tener columnas de Fecha y Distancia (Km)."
         )
+    if uploaded_file is not None:
+        resumen_file, err_file = process_uploaded_activities(uploaded_file)
+        if err_file:
+            render_status_badge(err_file, tone="danger", icon="⚠")
+        else:
+            # 1. Badge de éxito
+            render_status_badge(
+                f"Historial cargado. Última actividad: {resumen_file.get('fecha_reciente', 'N/A')} ({resumen_file.get('total_sesiones', 0)} registros).",
+                tone="success",
+                icon="✓",
+            )
+            
+            # 2. Métricas de volumen estándar
+            km_agudos_val = resumen_file.get("km_agudos", 40.0)
+            km_cronicos_val = resumen_file.get("km_cronicos", 35.0)
 
-        if uploaded_file is not None:
-            resumen_file, err_file = process_uploaded_activities(uploaded_file)
-            if err_file:
-                render_status_badge(err_file, tone="danger", icon="⚠")
-            else:
-                render_status_badge(
-                    f"Historial cargado. Última actividad: {resumen_file['fecha_reciente']} ({resumen_file['total_sesiones']} registros).",
-                    tone="success",
-                    icon="✓",
-                )
-                km_agudos_val = resumen_file["km_agudos"]
-                km_cronicos_val = resumen_file["km_cronicos"]
-                
-                # 👈 GUARDAMOS LA TABLA EN EL ESTADO GLOBAL
-                st.session_state["df_actividades"] = resumen_file["df"]
+            # 3. 🔥 CONEXIÓN DANIELS: Extraer actividades y construir resumen semanal
+            df_actividades = resumen_file.get("df_actividades", None)
+            if df_actividades is not None and not df_actividades.empty:
+                st.session_state['df_actividades'] = df_actividades
+                # Genera y guarda la tabla agrupada con Puntos Daniels y ACWR
+                st.session_state['df_semanal'] = build_daniels_weekly_summary(df_actividades)
 
-                col_c1, col_c2 = st.columns(2)
-                with col_c1:
-                    render_hud_metric("Carga Aguda Detectada", f"{km_agudos_val} km", subtitle="Últimos 7 días", tone="amber")
-                with col_c2:
-                    render_hud_metric("Carga Crónica Detectada", f"{km_cronicos_val} km/sem", subtitle="Promedio 28 días", tone="cyan")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # 👈 MOSTRAR EL GRÁFICO COMBINADO SI HAY DATOS CARGADOS
-    if st.session_state.get("df_actividades") is not None:
-        with st.expander("📊 Ver gráfico histórico de Carga vs ACWR", expanded=True):
-            render_interactive_ecosystem_chart(st.session_state["df_actividades"])
+# --- LÍNEAS TEMPORALES DE DIAGNÓSTICO ---
+st.write("1. ¿Existe df_actividades?:", "df_actividades" in st.session_state)
+st.write("2. ¿Existe df_semanal?:", "df_semanal" in st.session_state)
+if st.session_state.get("df_semanal") is not None:
+    st.write("3. Filas en df_semanal:", len(st.session_state["df_semanal"]))
 
+    # 2. Tarjetas HUD (Fuera del expander para que se vean siempre limpias y sin bugs de HTML)
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        html_aguda = (
+            f'<div class="hud-card" style="--hud-accent: #FFB300;">'
+            f'<div class="hud-accent-bar"></div>'
+            f'<div class="hud-label">CARGA AGUDA DETECTADA</div>'
+            f'<div class="hud-value">{km_agudos_val:.1f} <span style="font-size:1rem;color:#8A99AD">km</span></div>'
+            f'<div class="hud-subtitle">Últimos 7 días</div>'
+            f'</div>'
+        )
+        st.markdown(html_aguda, unsafe_allow_html=True)
 
+    with col_c2:
+        html_cronica = (
+            f'<div class="hud-card" style="--hud-accent: #00D2FF;">'
+            f'<div class="hud-accent-bar"></div>'
+            f'<div class="hud-label">CARGA CRÓNICA DETECTADA</div>'
+            f'<div class="hud-value">{km_cronicos_val:.1f} <span style="font-size:1rem;color:#8A99AD">km/sem</span></div>'
+            f'<div class="hud-subtitle">Promedio 28 días</div>'
+            f'</div>'
+        )
+        st.markdown(html_cronica, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 3. Expander: Gráfico Histórico desplegable
+    if st.session_state.get("df_semanal") is not None:
+        with st.expander("📊 Ver gráfico histórico de Carga vs ACWR", expanded=False):
+            render_interactive_ecosystem_chart(st.session_state.get("df_actividades"))
     # Expander 2: Entradas / Ajuste Manual
     with st.expander("⚙️ Ingreso o Ajuste Manual de Carga", expanded=True):
         col_a1, col_a2 = st.columns(2)
@@ -1123,7 +1435,9 @@ with tab_analitica:
             if "Activity Name" in df.columns:
                 display_df.insert(1, "Actividad", df["Activity Name"].astype(str).values)
 
-            return display_df, None
+            weekly_df = build_daniels_weekly_summary(df)
+
+            return {"display_df": display_df, "df_semanal": weekly_df}, None
         except Exception as exc:
             return None, f"Error al procesar archivo: {exc}"
 
