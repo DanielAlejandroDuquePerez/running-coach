@@ -731,16 +731,23 @@ with tab_hoy:
         dias_descanso_recientes=dias_descanso_recientes,
     )
 
-    # 1. Tarjeta de Readiness
+# 1. Tarjeta de Readiness
     readiness_col, readiness_note = st.columns([1.1, 1.4])
     with readiness_col:
-        render_hud_metric(
-            "Readiness de Hoy",
-            f"{int(readiness_score)}<span style='font-size:1rem;color:#8A99AD'> / 100</span>",
-            subtitle="Predisposición diaria al entrenamiento",
-            tone="lime" if readiness_badge == "success" else "amber" if readiness_badge == "warning" else "red",
+        accent_color = "#00E676" if readiness_badge == "success" else "#FFB300" if readiness_badge == "warning" else "#FF3366"
+        
+        # HTML en cadena limpia (no altera la sangria de Python ni activa el modo codigo de Streamlit)
+        html_readiness = (
+            f'<div class="hud-card" style="--hud-accent: {accent_color};">'
+            f'<div class="hud-accent-bar"></div>'
+            f'<div class="hud-label">READINESS DE HOY</div>'
+            f'<div class="hud-value">{int(readiness_score)} <span style="font-size:1rem;color:#8A99AD">/ 100</span></div>'
+            f'<div class="hud-subtitle">Predisposición diaria al entrenamiento</div>'
+            f'</div>'
         )
+        st.markdown(html_readiness, unsafe_allow_html=True)
         st.progress(readiness_score / 100)
+
     with readiness_note:
         if readiness_badge == "success":
             render_status_badge(readiness_state, tone="success", icon="●")
@@ -753,6 +760,9 @@ with tab_hoy:
         )
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # 2. Siguientes métricas (Asegurar que esta linea esté al nivel principal de sangria)
+    metric_cols = st.columns(3)
 
     # 2. Métricas clave
     metric_cols = st.columns(3)
