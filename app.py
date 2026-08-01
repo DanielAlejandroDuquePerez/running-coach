@@ -383,7 +383,7 @@ def render_interactive_ecosystem_chart(df):
     fig.update_xaxes(showgrid=True, gridcolor="rgba(255, 255, 255, 0.05)")
     fig.update_yaxes(showgrid=True, gridcolor="rgba(255, 255, 255, 0.05)")
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="hero_chart")
 
 # --- FUNCIÓN PARA CALCULAR PREDISPOSICIÓN AL ENTRENAMIENTO (GARMIN STYLE) ---
 def calculate_training_readiness(acwr, rpe_promedio, dias_descanso_recientes=1):
@@ -430,6 +430,52 @@ def calculate_training_readiness(acwr, rpe_promedio, dias_descanso_recientes=1):
         color_badge = "error"
 
     return readiness_val, estado, color_badge
+
+
+def calculate_mind_body_score(sleep_quality, mood, motivation, focus, soreness, stress_level):
+    sleep_map = {
+        "Mala": 35,
+        "Regular": 60,
+        "Buena": 80,
+        "Excelente": 95,
+    }
+    mood_map = {
+        "Muy bajo": 25,
+        "Bajo": 45,
+        "Neutral": 65,
+        "Alto": 80,
+        "Muy alto": 92,
+    }
+    stress_penalty_map = {
+        "Bajo": 0,
+        "Moderado": 10,
+        "Alto": 20,
+    }
+
+    sleep_score = sleep_map.get(sleep_quality, 60)
+    mood_score = mood_map.get(mood, 65)
+    stress_penalty = stress_penalty_map.get(stress_level, 10)
+
+    score = (
+        sleep_score * 0.25
+        + mood_score * 0.25
+        + float(motivation) * 8.0
+        + float(focus) * 7.0
+        + (10.0 - float(soreness)) * 4.0
+        - stress_penalty
+    )
+    return round(max(0, min(100, score)), 0)
+
+
+def build_readiness_log_df(entries):
+    if not entries:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(entries).copy()
+    if "fecha" in df.columns:
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+        df = df.dropna(subset=["fecha"]).sort_values("fecha")
+    return df
 
 # --- FUNCIÓN PARA CARGAR DATOS DE ACTIVIDADES ---
 def calculate_race_predictions(base_distance_km, base_time_min):
@@ -487,6 +533,8 @@ if "km_cronicos" not in st.session_state:
     st.session_state["km_cronicos"] = 35.0
 if "prompt_sugerido_ia" not in st.session_state:
     st.session_state["prompt_sugerido_ia"] = ""
+if "readiness_log" not in st.session_state:
+    st.session_state["readiness_log"] = []
 
 # --- INYECCIÓN CSS GARMIN HUD ---
 st.markdown(
@@ -967,7 +1015,7 @@ render_stress_alert(data)
 tabs = st.tabs([
     "🏠 Tablero Hoy",
     "🎯 Ritmos & Marcas",
-    "📊 Historial de Carga y Gestión de Archivos",
+    "🩺 Readiness y Sensaciones",
     "🤖 Coach IA",
     "📓 Seguimiento",
 ])
@@ -1063,7 +1111,7 @@ if st.session_state.get('df_semanal') is not None:
         st.caption("Evolución del esfuerzo real en Puntos Daniels según la intensidad de las zonas recorridas.")
         
         fig_internal = create_internal_load_chart(df_sem)
-        st.plotly_chart(fig_internal, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig_internal, use_container_width=True, config={'displayModeBar': False}, key="hoy_daniels_chart")
     # 3. Gráfico Interactivo Combinado
     st.markdown("### 📈 Volumen vs ACWR")
     render_interactive_ecosystem_chart(filtered)
@@ -1120,11 +1168,7 @@ with tab_ritmos:
                 render_hud_metric(label, info["tiempo"], delta=f"Ritmo: {info['ritmo']}", tone="cyan")
 
     st.markdown("---")
-# --- GENERACIÓN AUTOMÁTICA DE DF_SEMANAL (AUTOCURACIÓN) ---
-if "df_actividades" in st.session_state and st.session_state["df_actividades"] is not None:
-    if "df_semanal" not in st.session_state or st.session_state["df_semanal"] is None or st.session_state["df_semanal"].empty:
-        st.session_state["df_semanal"] = build_daniels_weekly_summary(st.session_state["df_actividades"])
-        
+
     # 3. Acordeones con zonas fisiológicas Z2 a Z5
     st.subheader("🧬 Zonas Fisiológicas de Entrenamiento")
     vdot_calc, vdot_ref = get_vdot_from_df(filtered)
@@ -1210,48 +1254,131 @@ if "df_actividades" in st.session_state and st.session_state["df_actividades"] i
     st.caption("Sincroniza tu historial de entrenamiento desde un archivo o ajusta los valores manualmente.")
 
     # Valores por defecto para fallback manual
-    km_agudos_val = 40.0
-    km_cronicos_val = 35.0
+    km_agudos_val = float(st.session_state.get("km_agudos", 40.0))
+    km_cronicos_val = float(st.session_state.get("km_cronicos", 35.0))
 
-    # 1. Expander: Carga de Archivos Automática
+    def process_uploaded_activities(file):
+        try:
+            if file.name.lower().endswith(".csv"):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file, sheet_name=0)
+
+            df.columns = [str(col).strip() for col in df.columns]
+            lower_map = {col.lower(): col for col in df.columns}
+
+            fecha_col = next((lower_map[key] for key in lower_map if "fecha" in key or "date" in key), None)
+            dist_col = next((lower_map[key] for key in lower_map if "distancia" in key or "distance" in key or key == "km"), None)
+
+            if not fecha_col or not dist_col:
+                return None, "El archivo debe incluir al menos una columna de fecha y una de distancia."
+
+            df[fecha_col] = pd.to_datetime(df[fecha_col], errors="coerce")
+            df[dist_col] = pd.to_numeric(df[dist_col], errors="coerce")
+            df = df.dropna(subset=[fecha_col]).copy()
+            df = df.sort_values(by=fecha_col, ascending=False)
+
+            display_df = df[[fecha_col, dist_col]].copy()
+            display_df.columns = ["Fecha", "Distancia"]
+            if "Activity Name" in df.columns:
+                display_df.insert(1, "Actividad", df["Activity Name"].astype(str).values)
+
+            weekly_df = build_daniels_weekly_summary(df)
+
+            return {"df_actividades": df, "display_df": display_df, "df_semanal": weekly_df}, None
+        except Exception as exc:
+            return None, f"Error al procesar archivo: {exc}"
+
     with st.expander("📁 Cargar Historial desde Archivo (CSV / Excel)", expanded=False):
-        uploaded_file = st.file_uploader(
-            "Selecciona tu archivo de entrenamiento (.csv o .xlsx)", 
-            type=["csv", "xlsx"],
-            help="El archivo debe tener columnas de Fecha y Distancia (Km)."
-        )
+        uploaded_file = st.file_uploader("Cargar historial de entrenamiento", type=["csv", "xlsx"])
+
     if uploaded_file is not None:
         resumen_file, err_file = process_uploaded_activities(uploaded_file)
         if err_file:
             render_status_badge(err_file, tone="danger", icon="⚠")
         else:
-            # 1. Badge de éxito
+            st.session_state["df_actividades"] = resumen_file["df_actividades"]
+            st.session_state["df_actividades_tabla"] = resumen_file["display_df"]
+            st.session_state["df_semanal"] = resumen_file["df_semanal"]
             render_status_badge(
-                f"Historial cargado. Última actividad: {resumen_file.get('fecha_reciente', 'N/A')} ({resumen_file.get('total_sesiones', 0)} registros).",
+                f"Historial cargado: {len(resumen_file['df_actividades'])} registros procesados.",
                 tone="success",
                 icon="✓",
             )
-            
-            # 2. Métricas de volumen estándar
-            km_agudos_val = resumen_file.get("km_agudos", 40.0)
-            km_cronicos_val = resumen_file.get("km_cronicos", 35.0)
 
-            # 3. 🔥 CONEXIÓN DANIELS: Extraer actividades y construir resumen semanal
-            df_actividades = resumen_file.get("df_actividades", None)
-            if df_actividades is not None and not df_actividades.empty:
-                st.session_state['df_actividades'] = df_actividades
-                # Genera y guarda la tabla agrupada con Puntos Daniels y ACWR
-                st.session_state['df_semanal'] = build_daniels_weekly_summary(df_actividades)
+    df_act = st.session_state.get("df_actividades")
+    df_tabla = st.session_state.get("df_actividades_tabla")
+    df_sem = st.session_state.get("df_semanal")
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    if isinstance(df_act, pd.DataFrame) and not df_act.empty:
+        if not isinstance(df_sem, pd.DataFrame) or df_sem.empty:
+            df_sem = build_daniels_weekly_summary(df_act)
+            st.session_state["df_semanal"] = df_sem
 
-# --- LÍNEAS TEMPORALES DE DIAGNÓSTICO ---
-st.write("1. ¿Existe df_actividades?:", "df_actividades" in st.session_state)
-st.write("2. ¿Existe df_semanal?:", "df_semanal" in st.session_state)
-if st.session_state.get("df_semanal") is not None:
-    st.write("3. Filas en df_semanal:", len(st.session_state["df_semanal"]))
+    if isinstance(df_tabla, pd.DataFrame) and not df_tabla.empty:
+        st.subheader("📋 Registro Detallado de Actividades")
+        st.dataframe(df_tabla, use_container_width=True)
 
-    # 2. Tarjetas HUD (Fuera del expander para que se vean siempre limpias y sin bugs de HTML)
+    if isinstance(df_sem, pd.DataFrame) and not df_sem.empty:
+        with st.expander("🔥 Ver Carga Interna: Puntos de Estrés Daniels (Por Intensidad)", expanded=True):
+            st.subheader("Distribución de Estrés Fisiológico Semanal")
+            st.caption("Evolución del esfuerzo real en Puntos Daniels según la intensidad de las zonas recorridas.")
+            fig_internal = create_internal_load_chart(df_sem)
+            st.plotly_chart(fig_internal, use_container_width=True, config={"displayModeBar": False}, key="analitica_daniels_chart_preview")
+    else:
+        st.info("💡 Sube tu archivo de entrenamientos para visualizar la Carga Interna Daniels.")
+
+    st.markdown("---")
+    st.subheader("⚙️ Ajuste manual de kilometraje")
+    st.caption("Ajusta la carga aguda y crónica para recalcular tu ACWR de forma rápida.")
+
+    km_agudos_manual = st.number_input(
+        "Carga aguda (km última semana)",
+        min_value=0.0,
+        max_value=250.0,
+        value=km_agudos_val,
+        step=1.0,
+        key="analitica_km_agudos_manual",
+    )
+    km_cronicos_manual = st.number_input(
+        "Carga crónica (km promedio semanal)",
+        min_value=1.0,
+        max_value=250.0,
+        value=km_cronicos_val,
+        step=1.0,
+        key="analitica_km_cronicos_manual",
+    )
+
+    st.session_state["km_agudos"] = float(km_agudos_manual)
+    st.session_state["km_cronicos"] = float(km_cronicos_manual)
+
+    acwr_manual, estado_acwr_manual, tipo_alerta_manual, desc_acwr_manual = compute_acwr_ratio(
+        km_agudos_manual,
+        km_cronicos_manual,
+    )
+
+    metric_manual_1, metric_manual_2 = st.columns(2)
+    with metric_manual_1:
+        render_hud_metric("ACWR Manual", f"{acwr_manual:.2f}", tone="cyan")
+    with metric_manual_2:
+        if tipo_alerta_manual == "success":
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="success", icon="✓")
+        elif tipo_alerta_manual == "warning":
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="warning", icon="⚠")
+        elif tipo_alerta_manual == "error":
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="danger", icon="⚠")
+        else:
+            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="info", icon="i")
+
+    if acwr_manual > 1.3 or acwr_manual < 0.8:
+        prompt_auto = (
+            f"Hola Coach, mi ratio ACWR actual es de {acwr_manual:.2f} con una carga aguda de {km_agudos_manual} km "
+            f"y crónica de {km_cronicos_manual} km/sem. Mi estado actual es: {estado_acwr_manual}. "
+            f"¿Qué ajustes específicos de descarga o intensidades me recomiendas para esta semana?"
+        )
+        if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
+            st.session_state["prompt_sugerido_ia"] = prompt_auto
+            render_status_badge("Consulta guardada. Ve a la pestaña Coach IA para enviarla.", tone="info", icon="↗")
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         html_aguda = (
@@ -1285,9 +1412,9 @@ if st.session_state.get("df_semanal") is not None:
     with st.expander("⚙️ Ingreso o Ajuste Manual de Carga", expanded=True):
         col_a1, col_a2 = st.columns(2)
         with col_a1:
-            km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=km_agudos_val, step=1.0))
+            km_agudos = float(st.number_input("Carga Aguda (Km última semana):", min_value=0.0, max_value=200.0, value=km_agudos_val, step=1.0, key="analitica_km_agudos"))
         with col_a2:
-            km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal 28 días):", min_value=1.0, max_value=200.0, value=km_cronicos_val, step=1.0))
+            km_cronicos = float(st.number_input("Carga Crónica (Promedio semanal 28 días):", min_value=1.0, max_value=200.0, value=km_cronicos_val, step=1.0, key="analitica_km_cronicos"))
 
     # Cálculo y Visualización del ACWR
     val_acwr, estado_acwr, tipo_alerta, desc_acwr = compute_acwr_ratio(km_agudos, km_cronicos)
@@ -1404,104 +1531,203 @@ with tab_ai:
         # Mostrar el plan generado en pantalla
         st.markdown(st.session_state["current_ai_plan"])
 
-# --- PESTAÑA 3: HISTORIAL DE CARGA Y GESTIÓN DE ARCHIVOS ---
+
+# --- PESTAÑA 3: READINESS Y SENSACIONES ---
 with tab_analitica:
-    st.subheader("📊 Historial de Carga y Gestión de Archivos")
-    st.caption("Sincroniza tus registros (.csv / .xlsx) y examina el desglose detallado de actividades.")
+    st.subheader("🩺 Readiness y Sensaciones")
+    st.caption("Diario diario inspirado en Pfitzinger y Fitzgerald para conectar recuperación, mente y cuerpo.")
 
-    def process_uploaded_activities(file):
-        try:
-            if file.name.lower().endswith(".csv"):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file, sheet_name=0)
+    acwr_context = calculate_acwr(filtered)
+    days_since_last_run = max((date.today() - filtered["Activity Date"].max().date()).days, 0)
+    feedback_data = st.session_state.get("feedback_data", {})
 
-            df.columns = [str(col).strip() for col in df.columns]
-            lower_map = {col.lower(): col for col in df.columns}
+    mood_map = {
+        "Muy bajo": 25,
+        "Bajo": 45,
+        "Neutral": 65,
+        "Alto": 80,
+        "Muy alto": 92,
+    }
+    stress_map = {"Bajo": 0, "Moderado": 10, "Alto": 20}
+    sleep_quality_map = {"Mala": 35, "Regular": 60, "Buena": 80, "Excelente": 95}
 
-            fecha_col = next((lower_map[key] for key in lower_map if "fecha" in key or "date" in key), None)
-            dist_col = next((lower_map[key] for key in lower_map if "distancia" in key or "distance" in key or "km" == key), None)
+    current_sleep_quality = feedback_data.get("sleep_quality", "Buena")
+    current_stress = feedback_data.get("stress_level", "Moderado")
+    current_mood = feedback_data.get("mood", "Neutral")
+    current_notes = feedback_data.get("notes", "")
 
-            if not fecha_col or not dist_col:
-                return None, "El archivo debe incluir al menos una columna de fecha y una de distancia."
-
-            df[fecha_col] = pd.to_datetime(df[fecha_col], errors="coerce")
-            df[dist_col] = pd.to_numeric(df[dist_col], errors="coerce")
-            df = df.dropna(subset=[fecha_col]).copy()
-            df = df.sort_values(by=fecha_col, ascending=False)
-
-            display_df = df[[fecha_col, dist_col]].copy()
-            display_df.columns = ["Fecha", "Distancia"]
-            if "Activity Name" in df.columns:
-                display_df.insert(1, "Actividad", df["Activity Name"].astype(str).values)
-
-            weekly_df = build_daniels_weekly_summary(df)
-
-            return {"display_df": display_df, "df_semanal": weekly_df}, None
-        except Exception as exc:
-            return None, f"Error al procesar archivo: {exc}"
-
-    uploaded_file = st.file_uploader(
-        "Cargar historial de entrenamiento",
-        type=["csv", "xlsx"],
-        help="Sube un archivo con tus actividades para revisar el historial de carga.",
+    current_readiness_score, current_readiness_state, current_readiness_badge = calculate_training_readiness(
+        acwr_context.get("acwr", 0.0),
+        float(feedback_data.get("fatigue_rpe", 3)),
+        days_since_last_run,
+    )
+    current_mind_body_score = calculate_mind_body_score(
+        current_sleep_quality,
+        current_mood,
+        float(feedback_data.get("motivation", 6)),
+        float(feedback_data.get("focus", 6)),
+        float(feedback_data.get("soreness", 3)),
+        current_stress,
     )
 
-    if uploaded_file is not None:
-        uploaded_df, upload_error = process_uploaded_activities(uploaded_file)
-        if upload_error:
-            render_status_badge(upload_error, tone="danger", icon="⚠")
-        else:
-            st.session_state["df_actividades"] = uploaded_df
-            render_status_badge(f"Historial cargado: {len(uploaded_df)} registros procesados.", tone="success", icon="✓")
+    history_df = build_readiness_log_df(st.session_state.get("readiness_log", []))
 
-    df_actividades = st.session_state.get("df_actividades")
-    if df_actividades is not None and not df_actividades.empty:
-        st.markdown("### Actividades procesadas")
-        st.dataframe(df_actividades, use_container_width=True, hide_index=True)
-    else:
-        render_status_badge("Carga un archivo para ver aquí tu historial procesado.", tone="info", icon="i")
+    metric_cols = st.columns(4)
+    with metric_cols[0]:
+        render_hud_metric("Recover-ability", f"{current_readiness_score:.0f}%", delta=current_readiness_state, tone="cyan")
+    with metric_cols[1]:
+        render_hud_metric("Mind-Body", f"{current_mind_body_score:.0f}%", delta=f"Sueño {current_sleep_quality}", tone="lime")
+    with metric_cols[2]:
+        render_hud_metric("Días sin correr", f"{days_since_last_run}", delta="Contexto de recuperación", tone="amber")
+    with metric_cols[3]:
+        render_hud_metric("ACWR Contextual", f"{acwr_context.get('acwr', 0.0):.2f}", delta=acwr_context.get("message", ""), tone="slate")
 
     st.markdown("---")
-    st.subheader("⚙️ Ajuste manual de kilometraje")
-    st.caption("Ajusta la carga aguda y crónica para recalcular tu ACWR de forma rápida.")
+    st.markdown("### 📋 Diario diario de recuperación y sensaciones")
 
-    km_agudos_manual = st.number_input(
-        "Carga aguda (km última semana)",
-        min_value=0.0,
-        max_value=250.0,
-        value=float(st.session_state.get("km_agudos", 40.0)),
-        step=1.0,
-    )
-    km_cronicos_manual = st.number_input(
-        "Carga crónica (km promedio semanal)",
-        min_value=1.0,
-        max_value=250.0,
-        value=float(st.session_state.get("km_cronicos", 35.0)),
-        step=1.0,
-    )
+    with st.form("readiness_daily_form"):
+        form_date = st.date_input("Fecha del registro", value=date.today(), key="readiness_date")
 
-    st.session_state["km_agudos"] = float(km_agudos_manual)
-    st.session_state["km_cronicos"] = float(km_cronicos_manual)
+        form_cols_1 = st.columns(3)
+        with form_cols_1[0]:
+            sleep_hours = st.number_input("Horas de sueño", min_value=0.0, max_value=12.0, value=float(feedback_data.get("sleep_hours", 7.5)), step=0.25, key="readiness_sleep_hours")
+            sleep_quality = st.select_slider("Calidad del sueño", options=["Mala", "Regular", "Buena", "Excelente"], value=current_sleep_quality, key="readiness_sleep_quality")
+        with form_cols_1[1]:
+            fatigue_rpe = st.slider("Fatiga percibida", 1, 10, int(feedback_data.get("fatigue_rpe", 3)), key="readiness_fatigue_rpe")
+            soreness = st.slider("Rigidez / dolor muscular", 1, 10, int(feedback_data.get("soreness", 3)), key="readiness_soreness")
+        with form_cols_1[2]:
+            resting_hr = st.number_input("FC reposo (ppm)", min_value=35, max_value=120, value=int(feedback_data.get("resting_hr", 52)), step=1, key="readiness_resting_hr")
+            body_state = st.selectbox("Estado corporal", ["Ligero", "Normal", "Pesado", "Cargado"], index=["Ligero", "Normal", "Pesado", "Cargado"].index(feedback_data.get("body_state", "Normal")), key="readiness_body_state")
 
-    acwr_manual, estado_acwr_manual, tipo_alerta_manual, desc_acwr_manual = compute_acwr_ratio(
-        km_agudos_manual,
-        km_cronicos_manual,
-    )
+        form_cols_2 = st.columns(3)
+        with form_cols_2[0]:
+            mood = st.selectbox("Estado de ánimo", ["Muy bajo", "Bajo", "Neutral", "Alto", "Muy alto"], index=["Muy bajo", "Bajo", "Neutral", "Alto", "Muy alto"].index(current_mood), key="readiness_mood")
+            stress_level = st.selectbox("Estrés externo", ["Bajo", "Moderado", "Alto"], index=["Bajo", "Moderado", "Alto"].index(current_stress), key="readiness_stress")
+        with form_cols_2[1]:
+            motivation = st.slider("Motivación", 1, 10, int(feedback_data.get("motivation", 6)), key="readiness_motivation")
+            focus = st.slider("Enfoque mental", 1, 10, int(feedback_data.get("focus", 6)), key="readiness_focus")
+        with form_cols_2[2]:
+            confidence = st.slider("Confianza competitiva", 1, 10, int(feedback_data.get("confidence", 6)), key="readiness_confidence")
+            energy = st.slider("Energía percibida", 1, 10, int(feedback_data.get("energy", 6)), key="readiness_energy")
 
-    metric_manual_1, metric_manual_2 = st.columns(2)
-    with metric_manual_1:
-        render_hud_metric("ACWR Manual", f"{acwr_manual:.2f}", tone="cyan")
-    with metric_manual_2:
-        if tipo_alerta_manual == "success":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="success", icon="✓")
-        elif tipo_alerta_manual == "warning":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="warning", icon="⚠")
-        elif tipo_alerta_manual == "error":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="danger", icon="⚠")
-        else:
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="info", icon="i")
+        notes = st.text_area(
+            "Notas del día",
+            value=current_notes,
+            placeholder="Ej: Dormí mal, piernas pesadas, pero me sentí tranquilo mentalmente.",
+            height=100,
+            key="readiness_notes",
+        )
 
+        save_entry = st.form_submit_button("Registrar sensaciones", type="primary")
+
+    if save_entry:
+        recoverability_score = calculate_training_readiness(acwr_context.get("acwr", 0.0), fatigue_rpe, days_since_last_run)[0]
+        mind_body_score = calculate_mind_body_score(sleep_quality, mood, motivation, focus, soreness, stress_level)
+        record = {
+            "fecha": pd.Timestamp(form_date),
+            "recoverability_score": recoverability_score,
+            "mind_body_score": mind_body_score,
+            "sleep_hours": float(sleep_hours),
+            "sleep_quality": sleep_quality,
+            "fatigue_rpe": int(fatigue_rpe),
+            "soreness": int(soreness),
+            "resting_hr": int(resting_hr),
+            "body_state": body_state,
+            "mood": mood,
+            "stress_level": stress_level,
+            "motivation": int(motivation),
+            "focus": int(focus),
+            "confidence": int(confidence),
+            "energy": int(energy),
+            "notes": notes,
+        }
+
+        history = [row for row in st.session_state.get("readiness_log", []) if pd.Timestamp(row.get("fecha")).date() != pd.Timestamp(form_date).date()]
+        history.append(record)
+        st.session_state["readiness_log"] = history
+        st.session_state["feedback_data"] = {
+            "fatigue_rpe": fatigue_rpe,
+            "sleep_quality": sleep_quality,
+            "stress_level": stress_level,
+            "discomforts": [body_state],
+            "notes": notes,
+            "sleep_hours": sleep_hours,
+            "resting_hr": resting_hr,
+            "mood": mood,
+            "motivation": motivation,
+            "focus": focus,
+            "confidence": confidence,
+            "energy": energy,
+            "soreness": soreness,
+            "body_state": body_state,
+        }
+        st.rerun()
+
+    if history_df.empty:
+        st.info("Registra tu primer día para activar las gráficas de readiness y sensaciones.")
+    else:
+        st.markdown("### 📈 Visualizaciones")
+        chart_cols = st.columns([1.3, 1.0])
+
+        with chart_cols[0]:
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(x=history_df["fecha"], y=history_df["recoverability_score"], name="Recover-ability", mode="lines+markers", line=dict(color="#00D2FF", width=3)))
+            fig_trend.add_trace(go.Scatter(x=history_df["fecha"], y=history_df["mind_body_score"], name="Mind-Body", mode="lines+markers", line=dict(color="#00E676", width=3)))
+            fig_trend = make_responsive_chart(fig_trend, height=320, title="Evolución diaria de recuperación y estado mental")
+            fig_trend.update_yaxes(range=[0, 100])
+            st.plotly_chart(fig_trend, use_container_width=True, key="readiness_trend_chart")
+
+        with chart_cols[1]:
+            latest = history_df.iloc[-1]
+            radar_labels = ["Sueño", "Motivación", "Enfoque", "Confianza", "Energía", "Recuperación"]
+            radar_values = [
+                sleep_quality_map.get(latest.get("sleep_quality", "Buena"), 60),
+                float(latest.get("motivation", 6)) * 10,
+                float(latest.get("focus", 6)) * 10,
+                float(latest.get("confidence", 6)) * 10,
+                float(latest.get("energy", 6)) * 10,
+                float(latest.get("recoverability_score", 0)),
+            ]
+            radar_values.append(radar_values[0])
+            radar_labels.append(radar_labels[0])
+
+            fig_radar = go.Figure()
+            fig_radar.add_trace(
+                go.Scatterpolar(
+                    r=radar_values,
+                    theta=radar_labels,
+                    fill="toself",
+                    name="Último registro",
+                    line=dict(color="#FFB300", width=3),
+                    fillcolor="rgba(255, 179, 0, 0.18)",
+                )
+            )
+            fig_radar.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                polar=dict(
+                    bgcolor="rgba(0,0,0,0)",
+                    radialaxis=dict(visible=True, range=[0, 100], tickfont=dict(color="#8A99AD")),
+                    angularaxis=dict(tickfont=dict(color="#FFFFFF")),
+                ),
+                margin=dict(l=20, r=20, t=35, b=20),
+                showlegend=False,
+                height=320,
+            )
+            st.plotly_chart(fig_radar, use_container_width=True, key="readiness_radar_chart")
+
+        st.markdown("### 🗒️ Últimos registros")
+        st.dataframe(history_df.tail(10).sort_values("fecha", ascending=False), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 💡 Interpretación rápida")
+    tip_cols = st.columns(3)
+    with tip_cols[0]:
+        render_status_badge("Pfitzinger: la recuperación contextualiza la carga real.", tone="info", icon="i")
+    with tip_cols[1]:
+        render_status_badge("Fitzgerald: las sensaciones son datos, no ruido.", tone="success", icon="●")
+    with tip_cols[2]:
+        render_status_badge("Si el estrés mental sube, baja la ambición mecánica.", tone="warning", icon="⚠")
 with tab_ai:
     st.subheader("🤖 Coach IA — Planificación Personalizada")
     st.caption("Ajusta tu microciclo semanal considerando tus sensaciones, VDOT y nivel de fatiga.")
@@ -1674,7 +1900,7 @@ with tab_seguimiento:
         with st.expander("📊 Ver historial de adherencia", expanded=False):
             fig_adh.update_xaxes(type='category')
             fig_adh.update_traces(texttemplate='%{text}%', textposition='outside')
-            st.plotly_chart(fig_adh, use_container_width=True)
+            st.plotly_chart(fig_adh, use_container_width=True, key="seguimiento_adherence_chart")
 
         # 📋 2. SELECTOR DE PLAN GUARDADO
         plan_options = {f"{p['fecha_creacion']} | VDOT: {p['vdot_base']} | Estado: {p['estado']}": p['id'] for p in saved_plans}
