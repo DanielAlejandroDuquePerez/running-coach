@@ -1327,58 +1327,6 @@ with tab_ritmos:
             st.plotly_chart(fig_internal, use_container_width=True, config={"displayModeBar": False}, key="analitica_daniels_chart_preview")
     else:
         st.info("💡 Sube tu archivo de entrenamientos para visualizar la Carga Interna Daniels.")
-
-    st.markdown("---")
-    st.subheader("⚙️ Ajuste manual de kilometraje")
-    st.caption("Ajusta la carga aguda y crónica para recalcular tu ACWR de forma rápida.")
-
-    km_agudos_manual = st.number_input(
-        "Carga aguda (km última semana)",
-        min_value=0.0,
-        max_value=250.0,
-        value=km_agudos_val,
-        step=1.0,
-        key="analitica_km_agudos_manual",
-    )
-    km_cronicos_manual = st.number_input(
-        "Carga crónica (km promedio semanal)",
-        min_value=1.0,
-        max_value=250.0,
-        value=km_cronicos_val,
-        step=1.0,
-        key="analitica_km_cronicos_manual",
-    )
-
-    st.session_state["km_agudos"] = float(km_agudos_manual)
-    st.session_state["km_cronicos"] = float(km_cronicos_manual)
-
-    acwr_manual, estado_acwr_manual, tipo_alerta_manual, desc_acwr_manual = compute_acwr_ratio(
-        km_agudos_manual,
-        km_cronicos_manual,
-    )
-
-    metric_manual_1, metric_manual_2 = st.columns(2)
-    with metric_manual_1:
-        render_hud_metric("ACWR Manual", f"{acwr_manual:.2f}", tone="cyan")
-    with metric_manual_2:
-        if tipo_alerta_manual == "success":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="success", icon="✓")
-        elif tipo_alerta_manual == "warning":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="warning", icon="⚠")
-        elif tipo_alerta_manual == "error":
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="danger", icon="⚠")
-        else:
-            render_status_badge(f"{estado_acwr_manual} · {desc_acwr_manual}", tone="info", icon="i")
-
-    if acwr_manual > 1.3 or acwr_manual < 0.8:
-        prompt_auto = (
-            f"Hola Coach, mi ratio ACWR actual es de {acwr_manual:.2f} con una carga aguda de {km_agudos_manual} km "
-            f"y crónica de {km_cronicos_manual} km/sem. Mi estado actual es: {estado_acwr_manual}. "
-            f"¿Qué ajustes específicos de descarga o intensidades me recomiendas para esta semana?"
-        )
-        if st.button("🤖 Generar consulta automática para el Coach IA sobre esta alerta", type="secondary"):
-            st.session_state["prompt_sugerido_ia"] = prompt_auto
-            render_status_badge("Consulta guardada. Ve a la pestaña Coach IA para enviarla.", tone="info", icon="↗")
     col_c1, col_c2 = st.columns(2)
     with col_c1:
         html_aguda = (
