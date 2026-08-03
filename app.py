@@ -1472,7 +1472,8 @@ with tab_ai:
                 data=st.session_state["current_ai_plan"],
                 file_name="Plan_Semanal_Running_Coach.md",
                 mime="text/markdown",
-                use_container_width=True
+                use_container_width=True,
+                key="download_btn_plan_actual",
             )
             
         with col_actions2:
