@@ -88,3 +88,22 @@ def update_full_plan(plan_id: str, estado: str, adherencia: int, notas: str, dia
             json.dump(plans, f, ensure_ascii=False, indent=4)
 
     return updated
+
+def reset_all_plans(make_backup: bool = True) -> bool:
+    """
+    Limpia el historial de planes para iniciar un ciclo real.
+    Crea un respaldo del JSON actual antes de reiniciar.
+    """
+    _ensure_data_dir_exists()
+    if os.path.exists(PLANS_FILE):
+        if make_backup:
+            timestamp = int(datetime.now().timestamp())
+            backup_file = os.path.join(DATA_DIR, f"weekly_plans_backup_{timestamp}.json")
+            try:
+                os.rename(PLANS_FILE, backup_file)
+            except Exception as e:
+                print(f"Error creando respaldo: {e}")
+                return False
+        else:
+            os.remove(PLANS_FILE)
+    return True

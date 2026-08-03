@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.graph_objects as go
 import plotly.graph_objects as go
+from src import storage
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from plotly.subplots import make_subplots
@@ -910,6 +911,18 @@ if isinstance(selected_dates, (tuple, list)):
 else:
     inicio, fin = selected_dates, selected_dates
 
+with st.sidebar.expander("⚙️ Gestión de Base de Datos"):
+    if st.button("🚨 Reiniciar todo (Iniciar Ciclo Real)", type="secondary"):
+        # 1. Hacer respaldo y vaciar el JSON
+        storage.reset_all_plans(make_backup=True)
+        
+        # 2. Limpiar variables temporales de la sesión
+        st.session_state.pop('df_actividades', None)
+        st.session_state.pop('df_semanal', None)
+        
+        st.success("¡Base de datos reiniciada con éxito! Se creó un respaldo de tus pruebas.")
+        st.rerun()
+        
 # --- BARRA LATERAL: CHECK-IN CUALITATIVO DEL ATLETA ---
 with st.sidebar:
     st.header("📋 Check-in Semanal del Atleta")
