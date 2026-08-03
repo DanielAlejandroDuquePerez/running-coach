@@ -3,7 +3,7 @@ Módulo para la integración con la API de Google GenAI (Gemini).
 """
 
 import os
-import pandas as pd  # 👈 ¡Esta línea resuelve el NameError!
+import pandas as pd
 from dotenv import load_dotenv
 from google import genai
 from src.config import WEEKLY_KM_TARGET, TARGET_10K_TIME_MIN
@@ -14,6 +14,7 @@ from src.metrics import (
     aerobic_efficiency_status,
     predict_race_times,
 )
+
 # Cargar las variables definidas en el archivo .env
 load_dotenv()
 
@@ -41,7 +42,15 @@ def build_coach_prompt(
     Construye un prompt técnico enviando el contexto cuantitativo,
     fisiológico y cualitativo del atleta para solicitar un plan semanal integral.
     """
-    weekly_km = metrics_summary.get("weekly_km", 0)
+    # 1. Sanitización de Kilometraje Semanal
+    raw_weekly_km = metrics_summary.get("weekly_km", 0)
+    
+    # Cortafuegos: Si el valor recibido supera los 180 km, se trata del acumulado histórico total
+    if raw_weekly_km > 180:
+        weekly_km_str = f"Meta base de {WEEKLY_KM_TARGET} km/semana (Acumulado histórico en CSV: {raw_weekly_km:.1f} km)"
+    else:
+        weekly_km_str = f"{raw_weekly_km:.1f} km"
+
     avg_pace = metrics_summary.get("avg_pace", "N/A")
     zone_dist = metrics_summary.get("zone_distribution", {})
 
@@ -88,8 +97,7 @@ def build_coach_prompt(
         - {"; ".join(preds)}
         """
 
-    # Bloque cualitativo (Check-in del Atleta con soporte bilingüe de claves)
-    # Bloque cualitativo (Check-in actual del Atleta)
+    # Bloque cualitativo (Check-in del Atleta)
     if feedback_data:
         fatiga = feedback_data.get('fatigue_rpe') or feedback_data.get('rpe_fatiga') or 'N/A'
         sueno = feedback_data.get('sleep_quality') or feedback_data.get('sueño') or 'N/A'
@@ -110,31 +118,31 @@ def build_coach_prompt(
     else:
         qualitative_section = "\nESTADO CUALITATIVO ACTUAL: No se proporcionó check-in esta semana."
 
-    # BLOQUE NUEVO: HISTORIAL DE ADHERENCIA Y DIARIO DE LA SEMANA ANTERIOR
+    # Bloque de Adherencia e Historial
     saved_plans = load_all_plans()
     adherencia_section = ""
+    last_pct = 0
     if saved_plans:
-        last_plan = saved_plans[0] # Obtener el último plan guardado
-        pct = last_plan.get("adherencia_pct", 0)
+        last_plan = saved_plans[0]
+        last_pct = last_plan.get("adherencia_pct", 0)
         estado = last_plan.get("estado", "N/A")
         notas_previas = last_plan.get("notas_seguimiento", "Sin observaciones")
         
-        # Resumen del diario
         diario = last_plan.get("diario_sesiones", [])
-        dias_cumplidos = [s["Día"] for s in diario if s.get("Completado", False)]
+        dias_cumplidos = [s["Día"] for s in diario if isinstance(s, dict) and s.get("Completado", False)]
         
         adherencia_section = f"""
         HISTORIAL Y ADHERENCIA DE LA SEMANA ANTERIOR:
-        - Porcentaje de Cumplimiento (Adherencia Real): {pct}% (Estado: {estado})
+        - Porcentaje de Cumplimiento: {last_pct}% (Estado: {estado})
         - Días Cumplidos Exitosamente: {", ".join(dias_cumplidos) if dias_cumplidos else "Ninguno registrado"}
-        - Conclusiones/Notas del atleta sobre la semana previa: "{notas_previas}"
+        - Observaciones del atleta sobre la semana previa: "{notas_previas}"
         """
 
     prompt = f"""
-    Actúa como un Entrenador de Atletismo de Elite experto en Fisiología del Deporte, Entrenamiento Polarizado (80/20) y Metodología de Jack Daniels (VDOT).
+    Actúa como un Entrenador de Atletismo de Élite experto en Fisiología del Deporte, Entrenamiento Polarizado (80/20) y Metodología de Jack Daniels (VDOT).
 
     PERFIL Y MÉTRICAS ACTUALES DEL ATLETA:
-    - Volumen acumulado esta semana: {weekly_km} km (Meta base semanal: {WEEKLY_KM_TARGET} km)
+    - Volumen semanal de referencia: {weekly_km_str} (Meta base objetivo: {WEEKLY_KM_TARGET} km)
     - Ritmo promedio habitual: {avg_pace} min/km
     - Índice VDOT actual: {vdot_actual}
     - Distribución por zonas de esfuerzo: {zone_dist}
@@ -149,11 +157,15 @@ def build_coach_prompt(
     - Optimizar economía de carrera y prevenir lesiones por sobrecarga.
     - Preparación progresiva para mejorar la marca en 10K (Objetivo: sub-{TARGET_10K_TIME_MIN} min) y afinar detalles para los 15K del "Reto Rosa" en Roldanillo durante octubre.
 
+    REGLAS ESTRICTAS DE ANÁLISIS:
+    1. NO inventes "errores de GPS" ni anomalías de lectura en los datos a menos que el usuario lo mencione en sus notas.
+    2. Considera que el volumen objetivo semanal del atleta es de ~{WEEKLY_KM_TARGET} km y planifica los entrenamientos en torno a este número.
+
     INSTRUCCIONES DE RESPUESTA:
     Genera un informe analítico completo y un **Plan de Entrenamiento Semanal Detallado**, estructurado rigurosamente en Markdown con las siguientes 4 secciones:
 
     ### 1. 📊 Diagnóstico Fisiológico y Evaluación de Adherencia Previa
-    - Evalúa el estado actual considerando tanto las métricas de Strava/TSB/VDOT como la adherencia cumplida en la semana anterior ({saved_plans[0].get('adherencia_pct', 0) if saved_plans else 0}%).
+    - Evalúa el estado actual considerando las métricas de carga, TSB, VDOT y la adherencia lograda en la semana anterior ({last_pct}%).
 
     ### 2. 🎯 Foco Táctico de la Semana
     - Define el objetivo principal de la semana en función de las molestias físicas, el RPE y el cumplimiento previo.
@@ -194,7 +206,7 @@ def ask_ai_coach(
         )
 
         response = client.models.generate_content(
-            model="gemini-flash-latest",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         return response.text
