@@ -15,22 +15,22 @@
             "notes": ""
         },
         "estado": "En Curso",
-        "adherencia_pct": 0,
+        "adherencia_pct": 28,
         "notas_seguimiento": "",
         "diario_sesiones": [
             {
                 "Día": "Lunes",
                 "Tipo / Prescripción": "Descanso Activo / Rodaje Z1",
-                "Completado": false,
-                "Km Real": 0.0,
+                "Completado": true,
+                "Km Real": 4.6,
                 "RPE (1-10)": 1,
                 "Sensaciones / Notas": ""
             },
             {
                 "Día": "Martes",
                 "Tipo / Prescripción": "Calidad / Series / Tempo",
-                "Completado": false,
-                "Km Real": 0.0,
+                "Completado": true,
+                "Km Real": 7.7,
                 "RPE (1-10)": 1,
                 "Sensaciones / Notas": ""
             },

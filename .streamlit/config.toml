@@ -1,7 +1,17 @@
+# .streamlit/config.toml
+
 [theme]
-base="dark"
-primaryColor="#ff4b4b"
-backgroundColor="#0e1117"
-secondaryBackgroundColor="#262730"
-textColor="#ffffff"
-font="sans serif"
+# Color principal para botones, sliders y acentos (Naranja Strava)
+primaryColor = "#FC4C02" 
+
+# Color de fondo principal de la aplicación (Gris muy oscuro)
+backgroundColor = "#121212"
+
+# Color de fondo secundario para la barra lateral y tarjetas (Gris ligeramente más claro)
+secondaryBackgroundColor = "#1E1E1E"
+
+# Color del texto (Blanco hueso para no cansar la vista)
+textColor = "#F5F5F5"
+
+# Fuente profesional y limpia
+font = "sans serif"
