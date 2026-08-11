@@ -1,5 +1,14 @@
+import os
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+# 1. Cargar variables de entorno desde el archivo .env (Desarrollo local)
+load_dotenv()
+
+# 2. Sincronizar API Key con st.secrets (Streamlit Cloud / secrets.toml)
+if "GEMINI_API_KEY" not in os.environ and "GEMINI_API_KEY" in st.secrets:
+    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
 
 from src.config import DATA_PATH
 from src.data_loader import load_data
